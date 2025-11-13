@@ -1,8 +1,0 @@
-[2025-11-12 22:11:46,413][drake][INFO] - Meshcat listening for connections at http://localhost:7000
-[2025-11-12 22:11:46,520][drake][INFO] - LCM bus 'default' created for URL udpm://239.255.76.67:7667?ttl=0
-[2025-11-12 22:11:48,553][drake][WARNING] - Differential IK started returning status:"stuck" at time 0.
-[2025-11-12 22:11:50,813][drake][INFO] - Solved GCS shortest path using MOSEK with convex_relaxation=true and preprocessing=true and rounding.
-[2025-11-12 22:11:50,813][drake][INFO] - Found 1 unique paths, discarded 99 duplicate paths.
-[2025-11-12 22:11:50,817][drake][INFO] - Finished 1 rounding solutions with MOSEK.
-[2025-11-12 22:11:51,045][drake][WARNING] - Differential IK started finding solutions again at time 2.366.
-[2025-11-12 22:11:56,917][drake][WARNING] - Differential IK started returning status:"stuck" at time 8.389.
