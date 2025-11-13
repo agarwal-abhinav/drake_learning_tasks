@@ -1,0 +1,18 @@
+directives:
+    - add_model: 
+        name: t_pusher
+        file: package://models/t_pushee/t_pusher.sdf
+        default_free_body_pose: 
+            t_pusher: 
+                translation: [0.3, -0.3, 0.05]
+    - add_model: 
+        name: t_pusher_goal
+        file: package://models/t_pushee/t_pusher_goal.sdf
+
+    # Weld goal to world
+    - add_weld:
+        parent: world
+        child: t_pusher_goal::t_pusher
+        X_PC:
+            translation: [0.2, 0.0, 0.005]
+            rotation: !Rpy { deg: [0, 0, 45]}

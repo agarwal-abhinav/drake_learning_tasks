@@ -1,0 +1,17 @@
+_target_: controllers.ee_gamepad_planar_controller.GamePadEndEffectorPlanarController
+
+n_ee: ${experiment.n_ee}
+translation_scale: 0.0007
+orientation:
+  - [0.0, 1.0, 0.0, 0.0]
+z_values:
+  - 0.175
+deadzone: 0.09
+gamepad_orientation: # orientation of world frame in gamepad frame
+  x: [1, 0]
+  y: [0, -1]
+
+enable_button: 'Y'
+terminate_button: 'B'
+mode_switch_button: 'A'
+terminate_and_save_button: 'X'

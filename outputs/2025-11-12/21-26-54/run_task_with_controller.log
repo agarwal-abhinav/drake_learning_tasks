@@ -1,0 +1,2 @@
+[2025-11-12 21:26:56,421][drake][INFO] - Meshcat listening for connections at http://localhost:7001
+[2025-11-12 21:26:56,546][drake][INFO] - LCM bus 'default' created for URL udpm://239.255.76.67:7667?ttl=0

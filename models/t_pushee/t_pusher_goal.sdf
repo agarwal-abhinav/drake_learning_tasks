@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="t_pusher_goal">
+    <!--
+    Axes:
+      +X - Left, when facing front (smaller dimension)
+      +Y - Towards Bottom (larger dimension)
+      +Z - Towards Front (with label)
+    Origin:
+      (0, 0, 0) at the center of the box.
+  -->
+    <link name="t_pusher">
+      <visual name="t_pusher_top_visual">
+        <pose>0.0 0.04285714 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.2 0.05 5.0e-5</size>
+          </box>
+        </geometry>
+        <material>
+          <diffuse> 0.7 0.7 0.7 1. </diffuse>
+        </material>
+      </visual>
+      
+      <visual name="t_pusher_bottom_visual">
+        <pose>0.0 -0.05714286 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <box>
+            <size>0.05 0.15 5.0e-5</size>
+          </box>
+        </geometry>
+        <material>
+          <diffuse> 0.7 0.7 0.7 1. </diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

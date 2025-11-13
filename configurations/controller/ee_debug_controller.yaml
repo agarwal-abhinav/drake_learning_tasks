@@ -1,0 +1,7 @@
+_target_: controllers.ee_debug_controller.DebugEndEffectorController
+
+translation:
+  - [0.3, 0.0, 0.175]
+orientation:
+  - [0.0, 1.0, 0.0, 0.0]
+grasp: [1]

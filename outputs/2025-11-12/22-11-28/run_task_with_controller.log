@@ -1,0 +1,5 @@
+[2025-11-12 22:11:29,171][drake][INFO] - Meshcat listening for connections at http://localhost:7000
+[2025-11-12 22:11:29,278][drake][INFO] - LCM bus 'default' created for URL udpm://239.255.76.67:7667?ttl=0
+[2025-11-12 22:11:29,385][hydra.utils][ERROR] - Error getting class at controlllers.ee_debug_controller.DebugEndEffectorController: Error loading 'controlllers.ee_debug_controller.DebugEndEffectorController':
+ModuleNotFoundError("No module named 'controlllers'")
+Are you sure that module 'controlllers' is installed?

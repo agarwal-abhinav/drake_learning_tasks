@@ -1,0 +1,136 @@
+task:
+  _target_: tasks.kuka_pusher_long_context.KukaPlanarPusherLongContextBlock
+  dt: 0.005
+  n_ee: 1
+  is_hardware: false
+  export_diagram: false
+  scenario_data: "overall: \n  directives:\n  - add_model:\n      name: table \n \
+    \     file: package://models/table/table_wide.sdf\n  - add_weld: \n      parent:\
+    \ world\n      child: table::table_body\n      X_PC: \n          translation:\
+    \ [0, 0, 0]\n          rotation: !Rpy { deg: [0, 0, 0]}\n  - add_model:\n    \
+    \  name: floor \n      file: package://models/floor/gray_floor.urdf\n  - add_weld:\n\
+    \      parent: world\n      child: floor::base\n      X_PC:\n          translation:\
+    \ [0, 0, -0.98]\n  - add_directives:\n      file: package://models/add_red_block_heavy.dmd.yaml\n\
+    \  - add_model: \n      name: shadow_box_center\n      file: package://models/box_blue_inflated.sdf\n\
+    \  - add_weld: \n      parent: world\n      child: shadow_box_center::box_center_blue\n\
+    \      X_PC: \n          translation: [0.32, 0, 0.02]\n          rotation: !Rpy\
+    \ { deg: [0, 0, 0]}\n  - add_model: \n      name: shadow_box_goal\n      file:\
+    \ package://models/box_blue_inflated.sdf\n  - add_model: \n      name: cylinder_goal\n\
+    \      file: package://models/cylinder_no_collision.sdf\n  - add_weld:\n     \
+    \ parent: world\n      child: cylinder_goal::cylinder\n      X_PC: \n        \
+    \  translation: [0.19, 0, 0.02]\n          rotation: !Rpy { deg: [0, 0, 0]}\n\
+    \  - add_model:\n      name: iiwa\n      file: package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf\n\
+    \      default_joint_positions:\n          iiwa_joint_1: [-1.57]\n          iiwa_joint_2:\
+    \ [0.1]\n          iiwa_joint_3: [0]\n          iiwa_joint_4: [-1.2]\n       \
+    \   iiwa_joint_5: [0]\n          iiwa_joint_6: [1.6]\n          iiwa_joint_7:\
+    \ [0]\n  - add_weld:\n      parent: table::table_body\n      child: iiwa::iiwa_link_0\n\
+    \      X_PC:\n          translation: [-0.3, 0, 0]\n          rotation: !Rpy {\
+    \ deg: [0, 0, 0]}\n  - add_model:\n      name: pusher\n      file: package://models/pusher_floating_hydroelastic.sdf\
+    \ \n  - add_frame:\n      name: pusher::pusher_base\n      X_PF:\n          base_frame:\
+    \ pusher::pusher\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n         \
+    \ # displace by half of the pusher length, so the pusher starts\n          # exactly\
+    \ at the iiwa_link_7 base frame\n          translation: [0.0, 0.0, -0.075]\n \
+    \ - add_weld:\n      parent: iiwa::iiwa_link_7\n      child: pusher::pusher\n\
+    \      X_PC: \n          translation: [0.0, 0.0, 0.075]\n  - add_frame:\n    \
+    \  name: pusher::pusher_end\n      X_PF:\n          base_frame: pusher::pusher_base\n\
+    \          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n          # displace by pusher\
+    \ length\n          translation: [0.0, 0.0, 0.15]\n  model_drivers:\n      iiwa:\
+    \ !IiwaDriver\n          hand_model_name: pusher\n          lcm_bus: \"default\"\
+    \n          control_mode: position_only\n  lcm_buses: \n      default: \n    \
+    \      lcm_url: \"\"\nno_robot: \n  directives:\n  - add_model:\n      name: table\
+    \ \n      file: package://models/table/table_wide.sdf\n  - add_weld: \n      parent:\
+    \ world\n      child: table::table_body\n      X_PC: \n          translation:\
+    \ [0, 0, 0]\n          rotation: !Rpy { deg: [0, 0, 0]}\n  - add_model:\n    \
+    \  name: floor \n      file: package://models/floor/gray_floor.urdf\n  - add_weld:\n\
+    \      parent: world\n      child: floor::base\n      X_PC:\n          translation:\
+    \ [0, 0, -0.98]\n  - add_directives:\n      file: package://models/add_red_block.dmd.yaml\n\
+    \  - add_model:\n      name: pusher\n      file: package://models/pusher_floating_hydroelastic.sdf\
+    \ \n  - add_frame:\n      name: pusher::pusher_base\n      X_PF:\n          base_frame:\
+    \ pusher::pusher\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n         \
+    \ # displace by half of the pusher length, so the pusher starts\n          # exactly\
+    \ at the iiwa_link_7 base frame\n          translation: [0.0, 0.0, -0.075]\n \
+    \ - add_frame:\n      name: pusher::pusher_end\n      X_PF:\n          base_frame:\
+    \ pusher::pusher_base\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n    \
+    \      # displace by pusher length\n          translation: [0.0, 0.0, 0.15]\n\
+    robot-only: \n  directives:\n  - add_model:\n      name: table \n      file: package://models/table/table_wide.sdf\n\
+    \  - add_weld: \n      parent: world\n      child: table::table_body\n      X_PC:\
+    \ \n          translation: [0, 0, 0]\n          rotation: !Rpy { deg: [0, 0, 0]}\
+    \  \n  - add_model:\n      name: iiwa\n      file: package://drake_models/iiwa_description/sdf/iiwa7_no_collision.sdf\n\
+    \      default_joint_positions:\n          iiwa_joint_1: [-1.57]\n          iiwa_joint_2:\
+    \ [0.1]\n          iiwa_joint_3: [0]\n          iiwa_joint_4: [-1.2]\n       \
+    \   iiwa_joint_5: [0]\n          iiwa_joint_6: [1.6]\n          iiwa_joint_7:\
+    \ [0]\n  - add_weld:\n      parent: table::table_body\n      child: iiwa::iiwa_link_0\n\
+    \      X_PC:\n          translation: [-0.3, 0, 0]\n          rotation: !Rpy {\
+    \ deg: [0, 0, 0]}\n  - add_model:\n      name: pusher\n      file: package://models/pusher_floating_hydroelastic.sdf\
+    \ \n  - add_frame:\n      name: pusher::pusher_base\n      X_PF:\n          base_frame:\
+    \ pusher::pusher\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n         \
+    \ # displace by half of the pusher length, so the pusher starts\n          # exactly\
+    \ at the iiwa_link_7 base frame\n          translation: [0.0, 0.0, -0.075]\n \
+    \ - add_weld:\n      parent: iiwa::iiwa_link_7\n      child: pusher::pusher_base\n\
+    \      X_PC: \n          translation: [0.0, 0.0, 0.075]\n  - add_frame:\n    \
+    \  name: pusher::pusher_end\n      X_PF:\n          base_frame: pusher::pusher_base\n\
+    \          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n          # displace by pusher\
+    \ length\n          translation: [0.0, 0.0, 0.15]\n  model_drivers:\n      iiwa:\
+    \ !IiwaDriver\n          hand_model_name: pusher\n          lcm_bus: \"default\"\
+    \n          control_mode: position_only\n  lcm_buses: \n      default: \n    \
+    \      lcm_url: \"\"\n"
+  nominal_joint_positions:
+  - 0.366
+  - 1.04
+  - -0.54
+  - -1.51
+  - 0.69
+  - 0.77
+  - 2.68
+  reset_translation:
+  - 0.49
+  - 0.0
+  - 0.175
+  reset_orientation_wxyz:
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  initial_delay: 2.0
+  wait_diff_ik_delay: 2.0
+  sim_toppra_velocity_limit: 1.0
+  sim_toppra_acceleration_limit: 1.0
+  hw_toppra_velocity_limit: 0.05
+  hw_toppra_acceleration_limit: 0.025
+  data_collection_run_folder_name: context_length/initial_data
+  data_collection_type: right
+  camera:
+    enable: false
+    display: true
+    width: 640
+    height: 480
+    fps: 30
+  sim_camera:
+    enable: false
+    width: 640
+    height: 480
+    fov_y: 0.7853981633974483
+    translation:
+    - 1.2
+    - 0
+    - 1.8
+    rotation:
+    - -130
+    - 0
+    - 90
+controller:
+  _target_: controllers.ee_debug_controller.DebugEndEffectorController
+  translation:
+  - - 0.3
+    - 0.0
+    - 0.175
+  orientation:
+  - - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+  grasp:
+  - 1
+debug: false
+run_methods:
+- run_teleop

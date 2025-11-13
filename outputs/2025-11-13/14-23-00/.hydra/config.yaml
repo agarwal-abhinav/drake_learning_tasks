@@ -1,0 +1,136 @@
+task:
+  _target_: tasks.kuka_pusher_long_context.KukaPlanarPusherLongContextBlock
+  dt: 0.005
+  is_hardware: false
+  export_diagram: false
+  scenario_data: "overall: \n  directives:\n  - add_directives: \n      file: package://models/common_directives/add_table_floor.dmd.yaml\n\
+    \  - add_directives:\n      file: package://models/boxes/add_red_block_small_heavy.dmd.yaml\n\
+    \  - add_model: \n      name: shadow_box_center\n      file: package://models/boxes/box_blue_inflated_no_collision.sdf\n\
+    \  - add_weld: \n      parent: world\n      child: shadow_box_center::box_center\n\
+    \      X_PC: \n          translation: [0.28, 0, 0.02]\n          rotation: !Rpy\
+    \ { deg: [0, 0, 0]}\n  - add_model: \n      name: cylinder_goal\n      file: package://models/pusher_and_cylinder/cylinder_no_collision.sdf\n\
+    \  - add_weld:\n      parent: world\n      child: cylinder_goal::cylinder\n  \
+    \    X_PC: \n          translation: [0.16, 0, 0.02]\n          rotation: !Rpy\
+    \ { deg: [0, 0, 0]}\n  - add_directives: \n      file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml\n\
+    \  model_drivers:\n      iiwa: !IiwaDriver\n          hand_model_name: pusher\n\
+    \          lcm_bus: \"default\"\n          control_mode: position_only\n  lcm_buses:\
+    \ \n      default: \n          lcm_url: \"\"\nno_robot: \n  directives:\n  - add_model:\n\
+    \      name: table \n      file: package://models/table/table_wide.sdf\n  - add_weld:\
+    \ \n      parent: world\n      child: table::table_body\n      X_PC: \n      \
+    \    translation: [0, 0, 0]\n          rotation: !Rpy { deg: [0, 0, 0]}\n  - add_model:\n\
+    \      name: floor \n      file: package://models/floor/gray_floor.urdf\n  - add_weld:\n\
+    \      parent: world\n      child: floor::base\n      X_PC:\n          translation:\
+    \ [0, 0, -0.98]\n  - add_directives:\n      file: package://models/add_red_block.dmd.yaml\n\
+    \  - add_model:\n      name: pusher\n      file: package://models/pusher_floating_hydroelastic.sdf\
+    \ \n  - add_frame:\n      name: pusher::pusher_base\n      X_PF:\n          base_frame:\
+    \ pusher::pusher\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n         \
+    \ # displace by half of the pusher length, so the pusher starts\n          # exactly\
+    \ at the iiwa_link_7 base frame\n          translation: [0.0, 0.0, -0.075]\n \
+    \ - add_frame:\n      name: pusher::pusher_end\n      X_PF:\n          base_frame:\
+    \ pusher::pusher_base\n          rotation: !Rpy { deg: [0.0, 0.0, 0.0]}\n    \
+    \      # displace by pusher length\n          translation: [0.0, 0.0, 0.15]\n\
+    robot-only: \n  directives:\n  - add_directives: \n      file: package://models/common_directives/add_table_floor.dmd.yaml\n\
+    \  - add_directives:\n      file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml\n\
+    \  model_drivers:\n      iiwa: !IiwaDriver\n          hand_model_name: pusher\n\
+    \          lcm_bus: \"default\"\n          control_mode: position_only\n  lcm_buses:\
+    \ \n      default: \n          lcm_url: \"\"\n"
+  bins:
+    0:
+    - package://models/boxes/box_blue_inflated_no_collision.sdf
+    - - 0.25
+      - -0.21
+      - 0.02
+    1:
+    - package://models/boxes/box_blue_inflated_no_collision.sdf
+    - - 0.36
+      - -0.19
+      - 0.02
+    2:
+    - package://models/boxes/box_blue_inflated_no_collision.sdf
+    - - 0.38
+      - 0
+      - 0.02
+    3:
+    - package://models/boxes/box_blue_inflated_no_collision.sdf
+    - - 0.36
+      - 0.19
+      - 0.02
+    4:
+    - package://models/boxes/box_blue_inflated_no_collision.sdf
+    - - 0.25
+      - 0.21
+      - 0.02
+  nominal_joint_positions:
+  - 0.366
+  - 1.04
+  - -0.54
+  - -1.51
+  - 0.69
+  - 0.77
+  - 2.68
+  reset_translation:
+  - 0.46
+  - 0.0
+  - 0.175
+  reset_orientation_wxyz:
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  initial_delay: 2.0
+  wait_diff_ik_delay: 2.0
+  sim_toppra_velocity_limit: 1.0
+  sim_toppra_acceleration_limit: 1.0
+  hw_toppra_velocity_limit: 0.05
+  hw_toppra_acceleration_limit: 0.025
+  data_collection_run_folder_name: context_length/initial_data
+  initial_location_type: 0
+  initial_location_deltas:
+  - 0.01
+  - 0.01
+  - 20
+  camera:
+    enable: false
+    display: true
+    width: 640
+    height: 480
+    fps: 30
+  sim_camera:
+    enable: false
+    width: 640
+    height: 480
+    fov_y: 0.7853981633974483
+    translation:
+    - 1.2
+    - 0
+    - 1.8
+    rotation:
+    - -130
+    - 0
+    - 90
+controller:
+  _target_: controllers.ee_gamepad_planar_controller.GamePadEndEffectorPlanarController
+  n_ee: ${experiment.n_ee}
+  translation_scale: 0.0007
+  orientation:
+  - - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+  z_values:
+  - 0.175
+  deadzone: 0.09
+  gamepad_orientation:
+    x:
+    - 1
+    - 0
+    'y':
+    - 0
+    - -1
+  enable_button: 'Y'
+  terminate_button: B
+  mode_switch_button: A
+  terminate_and_save_button: X
+debug: false
+run_methods:
+- run_teleop

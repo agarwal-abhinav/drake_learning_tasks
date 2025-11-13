@@ -1,0 +1,143 @@
+_target_: tasks.kuka_pusher_long_context.KukaPlanarPusherLongContextBlock
+
+dt: 0.005
+is_hardware: False
+export_diagram: False
+scenario_data: |
+  overall: 
+    directives:
+    - add_directives: 
+        file: package://models/common_directives/add_table_floor.dmd.yaml
+    - add_directives:
+        file: package://models/boxes/add_red_block_small_heavy.dmd.yaml
+    - add_model: 
+        name: shadow_box_center
+        file: package://models/boxes/box_blue_inflated_no_collision.sdf
+    - add_weld: 
+        parent: world
+        child: shadow_box_center::box_center
+        X_PC: 
+            translation: [0.28, 0, 0.02]
+            rotation: !Rpy { deg: [0, 0, 0]}
+    - add_model: 
+        name: cylinder_goal
+        file: package://models/pusher_and_cylinder/cylinder_no_collision.sdf
+    - add_weld:
+        parent: world
+        child: cylinder_goal::cylinder
+        X_PC: 
+            translation: [0.16, 0, 0.02]
+            rotation: !Rpy { deg: [0, 0, 0]}
+    - add_directives: 
+        file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml
+    model_drivers:
+        iiwa: !IiwaDriver
+            hand_model_name: pusher
+            lcm_bus: "default"
+            control_mode: position_only
+    lcm_buses: 
+        default: 
+            lcm_url: ""
+  no_robot: 
+    directives:
+    - add_model:
+        name: table 
+        file: package://models/table/table_wide.sdf
+    - add_weld: 
+        parent: world
+        child: table::table_body
+        X_PC: 
+            translation: [0, 0, 0]
+            rotation: !Rpy { deg: [0, 0, 0]}
+    - add_model:
+        name: floor 
+        file: package://models/floor/gray_floor.urdf
+    - add_weld:
+        parent: world
+        child: floor::base
+        X_PC:
+            translation: [0, 0, -0.98]
+    - add_directives:
+        file: package://models/add_red_block.dmd.yaml
+    - add_model:
+        name: pusher
+        file: package://models/pusher_floating_hydroelastic.sdf 
+    - add_frame:
+        name: pusher::pusher_base
+        X_PF:
+            base_frame: pusher::pusher
+            rotation: !Rpy { deg: [0.0, 0.0, 0.0]}
+            # displace by half of the pusher length, so the pusher starts
+            # exactly at the iiwa_link_7 base frame
+            translation: [0.0, 0.0, -0.075]
+    - add_frame:
+        name: pusher::pusher_end
+        X_PF:
+            base_frame: pusher::pusher_base
+            rotation: !Rpy { deg: [0.0, 0.0, 0.0]}
+            # displace by pusher length
+            translation: [0.0, 0.0, 0.15]
+  robot-only: 
+    directives:
+    - add_directives: 
+        file: package://models/common_directives/add_table_floor.dmd.yaml
+    - add_directives:
+        file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml
+    model_drivers:
+        iiwa: !IiwaDriver
+            hand_model_name: pusher
+            lcm_bus: "default"
+            control_mode: position_only
+    lcm_buses: 
+        default: 
+            lcm_url: ""
+
+# dictionary for definining start and return columns 
+bins: 
+  0: 
+    - "package://models/boxes/box_blue_inflated_no_collision.sdf"
+    - [0.25, -0.21, 0.02]
+  1: 
+    - "package://models/boxes/box_blue_inflated_no_collision.sdf"
+    - [0.36, -0.19, 0.02]
+  2: 
+    - "package://models/boxes/box_blue_inflated_no_collision.sdf"
+    - [0.38, 0, 0.02]
+  3: 
+    - "package://models/boxes/box_blue_inflated_no_collision.sdf"
+    - [0.36, 0.19, 0.02]
+  4: 
+    - "package://models/boxes/box_blue_inflated_no_collision.sdf"
+    - [0.25, 0.21, 0.02]
+
+# for iiwa_planner
+# nominal_joint_positions: [0.41, 0.88, -0.65, -1.45, 0.59, 1.01, 2.76]
+nominal_joint_positions: [0.366, 1.04, -0.54, -1.51, 0.69, 0.77, 2.68]
+reset_translation: [0.46, 0.0, 0.175]
+reset_orientation_wxyz: [0.0, 1.0, 0.0, 0.0]
+initial_delay: 2.0
+wait_diff_ik_delay: 2.0
+
+sim_toppra_velocity_limit: 1.0
+sim_toppra_acceleration_limit: 1.0
+hw_toppra_velocity_limit: 0.05
+hw_toppra_acceleration_limit: 0.025
+
+data_collection_run_folder_name: "context_length/initial_data"
+initial_location_type: 0
+initial_location_deltas: [0.01, 0.01, 20]
+
+camera:
+  enable: False
+  display: True
+  width: 640
+  height: 480
+  fps: 30
+
+sim_camera: 
+  enable: False
+  width: 640
+  height: 480
+  fov_y: 0.7853981633974483
+  translation: [1.2, 0, 1.8]
+  rotation: [-130, 0, 90]

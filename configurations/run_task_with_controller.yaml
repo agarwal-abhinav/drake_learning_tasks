@@ -1,0 +1,7 @@
+defaults: 
+  - task: kuka_pusher_long_context 
+  - controller: ee_gamepad_planar_controller 
+
+debug: false 
+
+run_methods: ['run_teleop']
