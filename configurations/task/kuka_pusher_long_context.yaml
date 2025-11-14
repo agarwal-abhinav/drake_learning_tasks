@@ -12,12 +12,12 @@ scenario_data: |
         file: package://models/boxes/add_red_block_small_heavy.dmd.yaml
     - add_model: 
         name: shadow_box_center
-        file: package://models/boxes/box_blue_inflated_no_collision.sdf
+        file: package://models/boxes/box_green_inflated_no_collision.sdf
     - add_weld: 
         parent: world
         child: shadow_box_center::box_center
         X_PC: 
-            translation: [0.28, 0, 0.02]
+            translation: [0.25, 0, 0.02]
             rotation: !Rpy { deg: [0, 0, 0]}
     - add_model: 
         name: cylinder_goal
@@ -30,6 +30,41 @@ scenario_data: |
             rotation: !Rpy { deg: [0, 0, 0]}
     - add_directives: 
         file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml
+    - add_frame: 
+        name: overhead_camera_origin
+        X_PF:
+            base_frame: world
+            rotation: !Rpy { deg: [-140.0, 0, 90]}
+            translation: [0.65, 0, 0.45]
+    - add_model:
+        name: overhead_camera 
+        file: package://manipulation/camera_box.sdf 
+    - add_weld: 
+        parent: overhead_camera_origin
+        child: overhead_camera::base
+    - add_frame:
+        name: wrist_camera_origin
+        X_PF: 
+            base_frame: iiwa::iiwa_link_7
+            rotation: !Rpy { deg: [-20, 0, -90]}
+            translation: [-0.05, 0, 0.035]
+    - add_model: 
+        name: wrist_camera
+        file: package://manipulation/camera_box.sdf
+    - add_weld:
+        parent: iiwa::wrist_camera_origin
+        child: wrist_camera::base
+    cameras: 
+        overhead_camera: 
+            name: overhead_camera
+            depth: False 
+            X_PB: 
+                base_frame: overhead_camera::base
+        wrist_camera: 
+            name: wrist_camera
+            depth: False 
+            X_PB: 
+                base_frame: wrist_camera::base
     model_drivers:
         iiwa: !IiwaDriver
             hand_model_name: pusher
@@ -96,19 +131,19 @@ scenario_data: |
 bins: 
   0: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
-    - [0.25, -0.21, 0.02]
+    - [0.25, -0.20, 0.02]
   1: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
-    - [0.36, -0.19, 0.02]
+    - [0.36, -0.17, 0.02]
   2: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.38, 0, 0.02]
   3: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
-    - [0.36, 0.19, 0.02]
+    - [0.36, 0.17, 0.02]
   4: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
-    - [0.25, 0.21, 0.02]
+    - [0.25, 0.20, 0.02]
 
 # for iiwa_planner
 # nominal_joint_positions: [0.41, 0.88, -0.65, -1.45, 0.59, 1.01, 2.76]
@@ -127,17 +162,4 @@ data_collection_run_folder_name: "context_length/initial_data"
 initial_location_type: 0
 initial_location_deltas: [0.01, 0.01, 20]
 
-camera:
-  enable: False
-  display: True
-  width: 640
-  height: 480
-  fps: 30
-
-sim_camera: 
-  enable: False
-  width: 640
-  height: 480
-  fov_y: 0.7853981633974483
-  translation: [1.2, 0, 1.8]
-  rotation: [-130, 0, 90]
+display_camera_feed: False

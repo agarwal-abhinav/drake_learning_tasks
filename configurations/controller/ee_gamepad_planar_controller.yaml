@@ -1,7 +1,7 @@
 _target_: controllers.ee_gamepad_planar_controller.GamePadEndEffectorPlanarController
 
 n_ee: ${experiment.n_ee}
-translation_scale: 0.0007
+translation_scale: 0.00055
 orientation:
   - [0.0, 1.0, 0.0, 0.0]
 z_values:

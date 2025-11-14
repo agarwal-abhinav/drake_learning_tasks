@@ -30,44 +30,21 @@ from pydrake.all import (
     RigidTransform,
     RobotDiagram,
     Simulator,
-    WeldJoint
+    WeldJoint, 
 )
 
-from utils.drake_utils import xyz_rpy_deg
+from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting
 
 from manipulation.station import MakeHardwareStation
 from manipulation.station import (
     LoadScenario,
     ConfigureParser,
 )
-from manipulation.scenarios import AddIiwaDifferentialIK
+from manipulation.scenarios import AddIiwaDifferentialIK, AddMultibodyTriad
 
 class Mode(Enum):
     REGULAR = 'regular'
     DATA_COLLECTION = 'data collection'
-
-# def pre_finalize_function(data_side: str): 
-#     def parser_pre_finalize_function(parser: Parser): 
-#         if data_side == "left": 
-#             goal_joint = WeldJoint(
-#                 name="shadow_goal_joint",
-#                 frame_on_parent_F=parser.plant().world_frame(),
-#                 frame_on_child_M=parser.plant().GetFrameByName("box_link_blue", parser.plant().GetModelInstanceByName("shadow_box_goal")),
-#                 X_FM=xyz_rpy_deg([0.32, -0.23, 0.02], [0, 0, 0])
-#             )
-#             parser.plant().AddJoint(goal_joint)
-#         elif data_side == "right":
-#             goal_joint = WeldJoint(
-#                 name="shadow_goal_joint",
-#                 frame_on_parent_F=parser.plant().world_frame(),
-#                 frame_on_child_M=parser.plant().GetFrameByName("box_link_blue", parser.plant().GetModelInstanceByName("shadow_box_goal")),
-#                 X_FM=xyz_rpy_deg([0.32, 0.23, 0.02], [0, 0, 0])
-#             )
-#             parser.plant().AddJoint(goal_joint)
-#         else: 
-#             raise ValueError(f"data_side {data_side} not recognized, should be 'left' or 'right'")
-    
-#     return parser_pre_finalize_function
 
 def pre_finalize_function(dict_of_bins): 
     def parser_pre_finalize_function(parser: Parser): 
@@ -111,6 +88,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         # Load scenario
         scenario = LoadScenario(data=self.cfg.scenario_data, scenario_name="overall")
+        scenario = change_camera_to_point_lighting(scenario, main_camera_name="overhead_camera")
 
         # Meshcat
         self.meshcat = ConfigureAndStartMeshcat(scenario)
@@ -219,6 +197,27 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             self.iiwa_planner.GetOutputPort("iiwa_position_command"),
             builder,
         )
+
+        # if in debug mode, visualize camera feed 
+        if self.cfg.display_camera_feed: 
+            from utils.drake_utils import CameraSystem
+            self.camera_systems = []
+            for camera_name in scenario.cameras.keys(): 
+                this_system = builder.AddSystem(CameraSystem())
+                builder.Connect(
+                    self.station.GetOutputPort(f"{camera_name}.rgb_image"), 
+                    this_system.GetInputPort("camera_in")
+                )
+                self.camera_systems.append(this_system)
+
+                if self.debug: 
+                    camera_instance = self.plant.GetModelInstanceByName(camera_name)
+                    AddMultibodyTriad(
+                        self.plant.GetFrameByName("base", camera_instance),
+                        self.scene_graph, 
+                        length=0.1, 
+                        radius=0.005
+                    )
 
         self.diagram = builder.Build()
         self.simulator = Simulator(self.diagram)
@@ -342,10 +341,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             plant_context = plant.GetMyMutableContextFromRoot(context)
             diff_ik_context = diff_ik.GetMyMutableContextFromRoot(context)
             scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
-
-            # positions = self.station.GetOutputPort("iiwa.position_measured").Eval(station_context)
-            # breakpoint()
-            # print(positions)
             
             # do the teleop work on the ee and iiwa
             pose = self.pusher_frame.CalcPose(plant_context, plant.world_frame())
