@@ -4,3 +4,4 @@
 
 ## Running the Basic Task
 `python scripts/run_task_with_controller.py `
+`python scripts/run_task_with_controller.py controller=ee_debug_controller.yaml`

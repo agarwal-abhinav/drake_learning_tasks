@@ -1,6 +1,7 @@
 _target_: tasks.kuka_pusher_long_context.KukaPlanarPusherLongContextBlock
 
 dt: 0.005
+save_data_dt: 0.05
 is_hardware: False
 export_diagram: False
 scenario_data: |
@@ -163,3 +164,17 @@ initial_location_type: 0
 initial_location_deltas: [0.01, 0.01, 20]
 
 display_camera_feed: False
+
+keypoint_frame_names: 
+  - "object_red_keypoint_plus_x"
+  - "object_red_keypoint_minus_x"
+  - "object_red_keypoint_plus_y"
+  - "object_red_keypoint_minus_y"
+  - "object_red_keypoint_plus_x_y"
+  - "object_red_keypoint_minus_x_y"
+  - "object_red_keypoint_plus_x_minus_y"
+  - "object_red_keypoint_minus_x_plus_y"
+
+slider_name: "object_red"
+slider_frame_name: "box_center"
+slider_body_name: "box_link"

@@ -6,6 +6,7 @@ import os
 from enum import Enum
 import matplotlib.pyplot as plt
 import logging
+import copy
 
 from .base_task import BaseTask
 from utils.iiwa_planner import IiwaPlanner
@@ -73,6 +74,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         super().__init__(root_cfg)
 
         self.dt = self.cfg.dt 
+        self.save_data_dt = self.cfg.save_data_dt
 
         self.mode = Mode.REGULAR
         self.is_hardware = self.cfg.is_hardware
@@ -218,6 +220,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                         length=0.1, 
                         radius=0.005
                     )
+        self.scenario = scenario
+        
+        for camera_name in self.scenario.cameras.keys(): 
+            builder.ExportOutput(self.station.GetOutputPort(f"{camera_name}.rgb_image"), f"{camera_name}")
 
         self.diagram = builder.Build()
         self.simulator = Simulator(self.diagram)
@@ -226,21 +232,19 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         # collect reference names for data collection 
         self.pusher_frame = self.plant.GetFrameByName("pusher_end", self.plant.GetModelInstanceByName("pusher"))
         self.iiwa_frame = self.plant.GetFrameByName("iiwa_link_0", self.plant.GetModelInstanceByName("iiwa"))
-        self.slider_frame = self.plant.GetFrameByName("box_center", self.plant.GetModelInstanceByName("object_red"))
+        self.slider_frame = self.plant.GetFrameByName(self.cfg.slider_frame_name, self.plant.GetModelInstanceByName(self.cfg.slider_name))
 
         self.pusher_body = self.plant.GetBodyByName("pusher", self.plant.GetModelInstanceByName("pusher"))
-        self.slider_body = self.plant.GetBodyByName("box_link", self.plant.GetModelInstanceByName("object_red"))
+        self.slider_body = self.plant.GetBodyByName(self.cfg.slider_body_name, self.plant.GetModelInstanceByName(self.cfg.slider_name))
         self.pusher_collision_geom_id = self.plant.GetCollisionGeometriesForBody(self.pusher_body)[0]
         self.slider_collision_geom_id = self.plant.GetCollisionGeometriesForBody(self.slider_body)[0]
 
-        self.keypoint_frame_names = ["object_red_keypoint_plus_x", "object_red_keypoint_minus_x", \
-                                     "object_red_keypoint_plus_y", "object_red_keypoint_minus_y", \
-                                    "object_red_keypoint_plus_x_y", "object_red_keypoint_minus_x_y", \
-                                    "object_red_keypoint_plus_x_minus_y", "object_red_keypoint_minus_x_plus_y"]
+        self.keypoint_frame_names = self.cfg.keypoint_frame_names
+
         self.keypoint_frame_refs: List[Frame] = []
         for name in self.keypoint_frame_names: 
             self.keypoint_frame_refs.append(self.plant.GetFrameByName(name, \
-                                                                      self.plant.GetModelInstanceByName("object_red")))
+                                                                      self.plant.GetModelInstanceByName(self.cfg.slider_name)))
 
         if self.cfg.export_diagram:
             self.export_diagram("kuka_pusher_diagram.pdf")
@@ -295,12 +299,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         print(f"y: {100*random_y:.2f}cm")
         print(f"theta: {round(random_theta)} degrees\n")
 
-        # station_context = station.GetMyMutableContextFromRoot(context)
-        # color_image = self.station.GetOutputPort("camera0.rgb_image").Eval(station_context).data.copy()
-        # self.ax1 = plt.subplot(1, 1, 1)
-        # self.color_plot = self.ax1.imshow(color_image)
-        # plt.ion()
-
     def teleop(self):
         from pydrake.all import RigidTransform, Quaternion
 
@@ -315,25 +313,20 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         trajectory = {
             "time": [],
-            "ee_pos": [],
-            "ee_quat_wxyz": [],
-            "pusher_vel_translational": [],
-            "pusher_vel_rotational": [],
+            "pusher_pos": [],
+            "pusher_quat_wxyz": [],
             "time_wall": [], 
-            "block_pos": [], 
-            "block_quat_wxyz": [], 
-            "block_vel_translational": [], 
-            "block_vel_rotational": [], 
+            "slider_pos": [], 
+            "slider_quat_wxyz": [], 
             "contact_sdf": []
         }
         for frame_name in self.keypoint_frame_names: 
-            trajectory[f"{frame_name}_pos"] = []
-            trajectory[f"{frame_name}_quat_wxyz"] = []
-            trajectory[f"{frame_name}_vel_translational"] = []
-            trajectory[f"{frame_name}_vel_rotational"] = []
-        # trajectory.update({f"cam_rgb_{k}": [] for k in self.cameras.keys()})
+            trajectory[f"pusher_{frame_name}_pos"] = []
+            trajectory[f"pusher_{frame_name}_quat_wxyz"] = []
+        
+        for camera_name in self.scenario.cameras.keys(): 
+            trajectory[f"cam_rgb_{camera_name}"] = []
 
-        # terminate = np.array([False])
         terminate_teleop = False
         while not terminate_teleop:
             context = simulator.get_mutable_context()
@@ -352,36 +345,24 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
             diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, target_pose)
 
-            if self.mode == Mode.DATA_COLLECTION:
-                pose = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame)
-                pos = np.array([pose.translation()])
-                quat_wxyz = np.array([pose.rotation().ToQuaternion().wxyz()])
+            if (self.mode == Mode.DATA_COLLECTION and (simulator.get_context().get_time() % self.save_data_dt) == 0):
+                # get the pusher pose, velocity 
+                pusher_pose = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame)
+                pusher_pos = np.array([pusher_pose.translation()])
+                pusher_quat_wxyz = np.array([pusher_pose.rotation().ToQuaternion().wxyz()])
+
                 # get the slider pose, velocity, and keypoint poses and velocities
                 slider_pose = self.slider_frame.CalcPose(plant_context, self.iiwa_frame)
-                slider_velocity = self.slider_frame.CalcRelativeSpatialVelocity(plant_context, self.iiwa_frame, self.iiwa_frame, self.iiwa_frame)
-
-                pusher_vel = self.pusher_frame.CalcRelativeSpatialVelocity(plant_context, self.iiwa_frame, self.iiwa_frame, self.iiwa_frame)
-
-                pusher_vel_translational = np.array([pusher_vel.translational()])
-                pusher_vel_rotational = np.array([pusher_vel.rotational()])
-
-                block_pos = np.array([slider_pose.translation()])
-                block_quat_wxyz = np.array([slider_pose.rotation().ToQuaternion().wxyz()])
-                block_vel = np.array([slider_velocity.translational()])
-                block_ang_vel = np.array([slider_velocity.rotational()])
+                slider_pos = np.array([slider_pose.translation()])
+                slider_quat_wxyz = np.array([slider_pose.rotation().ToQuaternion().wxyz()])
 
                 keypoints_pos = []
                 keypoints_quat_wxyz = []
-                keypoints_vel = []
-                keypoints_ang_vel = []
                 for key_point_frame in self.keypoint_frame_refs: 
                     this_keypoint_pose = key_point_frame.CalcPose(plant_context, self.iiwa_frame)
-                    this_keypoint_velocity = key_point_frame.CalcRelativeSpatialVelocity(plant_context, self.iiwa_frame, self.iiwa_frame, self.iiwa_frame)
 
                     keypoints_pos.append(this_keypoint_pose.translation())
                     keypoints_quat_wxyz.append(this_keypoint_pose.rotation().ToQuaternion().wxyz())
-                    keypoints_vel.append(this_keypoint_velocity.translational())
-                    keypoints_ang_vel.append(this_keypoint_velocity.rotational())
 
                 # calculate the sdf between pusher and slider 
                 sg_query_obj: QueryObject = scene_graph.get_query_output_port().Eval(scene_graph_context)
@@ -391,8 +372,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                     if (collision_pair.id_A == self.pusher_collision_geom_id and collision_pair.id_B == self.slider_collision_geom_id) or \
                         (collision_pair.id_A == self.slider_collision_geom_id and collision_pair.id_B == self.pusher_collision_geom_id):
                         this_sdf = collision_pair.distance
-                
                 assert this_sdf is not None
+
                 # this slider pose can be saved
                 if len(trajectory['time']) == 0:
                     start_time = simulator.get_context().get_time()
@@ -401,35 +382,20 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 t_wall = time.time() - start_time_macro
                 trajectory["time"].append(t)
                 trajectory["time_wall"].append(t_wall)
-                trajectory["ee_pos"].append(pos)
-                trajectory["ee_quat_wxyz"].append(quat_wxyz)
-                trajectory["block_pos"].append(block_pos)
-                trajectory["block_quat_wxyz"].append(block_quat_wxyz)
-                trajectory["pusher_vel_translational"].append(pusher_vel_translational)
-                trajectory["pusher_vel_rotational"].append(pusher_vel_rotational)
-                trajectory["block_vel_translational"].append(block_vel)
-                trajectory["block_vel_rotational"].append(block_ang_vel)
+                trajectory["pusher_pos"].append(pusher_pos)
+                trajectory["pusher_quat_wxyz"].append(pusher_quat_wxyz)
+                trajectory["slider_pos"].append(slider_pos)
+                trajectory["slider_quat_wxyz"].append(slider_quat_wxyz)
                 for i, frame_name in enumerate(self.keypoint_frame_names):
                     trajectory[f"{frame_name}_pos"].append(keypoints_pos[i])
                     trajectory[f"{frame_name}_quat_wxyz"].append(keypoints_quat_wxyz[i])
-                    trajectory[f"{frame_name}_vel_translational"].append(keypoints_vel[i])
-                    trajectory[f"{frame_name}_vel_rotational"].append(keypoints_ang_vel[i])
                 trajectory["contact_sdf"].append(this_sdf)
-                # TODO: figure out camera interface
-                # for serial, cam in self.cameras.items():
-                #     frame = cam.wait_for_frames()
-                #     rgb = np.array(frame.get_color_frame().get_data())
-                #     trajectory[f"cam_rgb_{serial}"].append(rgb)
-                #     if self.cfg.camera.display: 
-                #         cv2.imshow(f"cam_rgb_{serial}", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+
+                for camera_name in self.scenario.cameras.keys(): 
+                    camera_rgb = copy.deepcopy(self.diagram.GetOutputPort(f"{camera_name}").Eval(context).data)
+                    trajectory[f"cam_rgb_{camera_name}"].append(camera_rgb)
 
             enable, terminate, terminate_and_save, mode_switch = self.controller.get_info()
-            # if self.cfg.camera.display: 
-            #     cv2.waitKey(1)
-
-            # color_image = self.station.GetOutputPort("camera0.rgb_image").Eval(station_context).data.copy()
-            # self.color_plot.set_data(color_image)
-            # plt.pause(0.01)
 
             if terminate:
                 if self.mode == Mode.DATA_COLLECTION:
@@ -517,8 +483,13 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         return plant
 
     def save_trajectory(self, trajectory): 
-        save_path = f'data/{self.cfg.data_collection_run_folder_name}/{self.cfg.data_collection_type}'
-        
+        if self.cfg.initial_location_type is not None: 
+            subdir = str(self.cfg.initial_location_type)
+        else: 
+            subdir = "general"
+
+        save_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
+
         i = 0
         while os.path.exists(f'{save_path}/{i}'): 
             i += 1
