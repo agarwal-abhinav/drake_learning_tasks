@@ -159,9 +159,9 @@ sim_toppra_acceleration_limit: 1.0
 hw_toppra_velocity_limit: 0.05
 hw_toppra_acceleration_limit: 0.025
 
-data_collection_run_folder_name: "context_length/initial_data"
+data_collection_run_folder_name: "kuka_pusher_long_context"
 initial_location_type: 0
-initial_location_deltas: [0.01, 0.01, 20]
+initial_location_deltas: [0.005, 0.005, 40]
 
 display_camera_feed: False
 
@@ -178,3 +178,6 @@ keypoint_frame_names:
 slider_name: "object_red"
 slider_frame_name: "box_center"
 slider_body_name: "box_link"
+
+teleop_min_seed: 0
+teleop_max_seed: 20

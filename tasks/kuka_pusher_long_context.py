@@ -7,6 +7,10 @@ from enum import Enum
 import matplotlib.pyplot as plt
 import logging
 import copy
+import shutil
+import yaml
+from hydra.core.hydra_config import HydraConfig
+import random
 
 from .base_task import BaseTask
 from utils.iiwa_planner import IiwaPlanner
@@ -221,7 +225,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                         radius=0.005
                     )
         self.scenario = scenario
-        
+
         for camera_name in self.scenario.cameras.keys(): 
             builder.ExportOutput(self.station.GetOutputPort(f"{camera_name}.rgb_image"), f"{camera_name}")
 
@@ -249,7 +253,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         if self.cfg.export_diagram:
             self.export_diagram("kuka_pusher_diagram.pdf")
     
-    def reset_robot(self):
+    def reset_robot(self, seed: int = 42):
+        np.random.seed(seed)
+        random.seed(seed)
+        self.seed = seed
+
         plant = self.plant
         iiwa_planner = self.iiwa_planner
         simulator = self.simulator
@@ -283,7 +291,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             initial_location_translation = self.cfg.bins[initial_location_type][1]
             random_x = np.random.uniform(initial_location_translation[0]-initial_location_deltas[0], initial_location_translation[0]+initial_location_deltas[0])
             random_y = np.random.uniform(initial_location_translation[1]-initial_location_deltas[1], initial_location_translation[1]+initial_location_deltas[1])
-            random_theta = np.random.uniform(-initial_location_deltas[0], initial_location_deltas[0])
+            random_theta = np.random.uniform(-initial_location_deltas[2], initial_location_deltas[2])
 
         current_slider_world_pose = self.slider_frame.CalcPose(plant_context, self.plant.world_frame())
         new_slider_world_pose = xyz_rpy_deg([random_x, random_y, current_slider_world_pose.translation()[2]], [0, 0, random_theta])
@@ -327,6 +335,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         for camera_name in self.scenario.cameras.keys(): 
             trajectory[f"cam_rgb_{camera_name}"] = []
 
+        rollout_start_time = simulator.get_context().get_time()
+
         terminate_teleop = False
         while not terminate_teleop:
             context = simulator.get_mutable_context()
@@ -344,8 +354,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             target_pose = RigidTransform(Quaternion(target_quat_wxyz[0]), target_pos[0])
 
             diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, target_pose)
-
-            if (self.mode == Mode.DATA_COLLECTION and (simulator.get_context().get_time() % self.save_data_dt) == 0):
+            
+            if (self.mode == Mode.DATA_COLLECTION and (((simulator.get_context().get_time() - rollout_start_time) % self.save_data_dt)) <= 1e-10):
                 # get the pusher pose, velocity 
                 pusher_pose = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame)
                 pusher_pos = np.array([pusher_pose.translation()])
@@ -360,7 +370,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 keypoints_quat_wxyz = []
                 for key_point_frame in self.keypoint_frame_refs: 
                     this_keypoint_pose = key_point_frame.CalcPose(plant_context, self.iiwa_frame)
-
                     keypoints_pos.append(this_keypoint_pose.translation())
                     keypoints_quat_wxyz.append(this_keypoint_pose.rotation().ToQuaternion().wxyz())
 
@@ -387,8 +396,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 trajectory["slider_pos"].append(slider_pos)
                 trajectory["slider_quat_wxyz"].append(slider_quat_wxyz)
                 for i, frame_name in enumerate(self.keypoint_frame_names):
-                    trajectory[f"{frame_name}_pos"].append(keypoints_pos[i])
-                    trajectory[f"{frame_name}_quat_wxyz"].append(keypoints_quat_wxyz[i])
+                    trajectory[f"pusher_{frame_name}_pos"].append(keypoints_pos[i])
+                    trajectory[f"pusher_{frame_name}_quat_wxyz"].append(keypoints_quat_wxyz[i])
                 trajectory["contact_sdf"].append(this_sdf)
 
                 for camera_name in self.scenario.cameras.keys(): 
@@ -484,21 +493,27 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
     def save_trajectory(self, trajectory): 
         if self.cfg.initial_location_type is not None: 
-            subdir = str(self.cfg.initial_location_type)
+            subdir = f"start_bin_{self.cfg.initial_location_type}"
         else: 
             subdir = "general"
 
         save_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
 
-        i = 0
-        while os.path.exists(f'{save_path}/{i}'): 
-            i += 1
+        # i = 0
+        # while os.path.exists(f'{save_path}/{i}'): 
+        #     i += 1
 
+        i = self.seed
         os.makedirs(f'{save_path}/{i}')
 
         for key in trajectory.keys(): 
             this_save_path = f'{save_path}/{i}/{key}.npy'
             np.save(this_save_path, np.array(trajectory[key]))
+        
+        # with open(f'{save_path}/{i}/run_config.yaml', 'w') as f:
+        #     yaml.dump(self.root_cfg, f)
+
+        shutil.copytree(HydraConfig.get().runtime.output_dir, f'{save_path}/{i}/hydra_logs')
 
     def run_teleop(self):
         logging.getLogger(
@@ -513,6 +528,51 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         if type(self.controller) == GamePadEndEffectorPlanarController: 
             assert(self.reset_pose.translation()[2] == self.controller.cfg.z_values[0])
 
+        if self.cfg.teleop_min_seed is not None: 
+            seeds = list(range(self.cfg.teleop_min_seed, self.cfg.teleop_max_seed))
+        else: 
+            seeds = [42]
+
+        m = 0
         while True:
-            self.reset_robot()
+            if m < len(seeds):
+                seed = seeds[m]
+                m += 1
+            else:
+                seed = random.randint(0, 10000)
+            print(f"Starting new teleop with seed {seed}...\n")
+            self.reset_robot(seed)
             trajectory = self.teleop()
+
+    def check_saved_trajectory_images(self): 
+        import cv2 
+        from tqdm import tqdm 
+
+        if self.cfg.initial_location_type is not None: 
+            subdir = f"start_bin_{self.cfg.initial_location_type}"
+        else: 
+            subdir = "general"
+
+        data_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
+
+        traj_dir_list = [
+            name for name in os.listdir(data_path) if os.path.isdir(os.path.join(data_path, name))
+        ]    
+
+        for traj_dir in tqdm(traj_dir_list):
+            loaded_images = []
+            for camera_name in self.scenario.cameras.keys(): 
+                loaded_images_this = np.load(os.path.join(data_path, traj_dir, f"cam_rgb_{camera_name}.npy"))
+                loaded_images.append(loaded_images_this)
+                breakpoint()
+
+                for frame in loaded_images_this: 
+                    cv2.imshow('video', cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_RGBA2BGR))
+                    if cv2.waitKey(30) & 0xFF == ord('q'):
+                        break   
+        cv2.destroyAllWindows()
+        breakpoint()
+
+
+
+
