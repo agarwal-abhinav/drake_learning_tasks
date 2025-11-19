@@ -180,4 +180,4 @@ slider_frame_name: "box_center"
 slider_body_name: "box_link"
 
 teleop_min_seed: 0
-teleop_max_seed: 30
+teleop_max_seed: 50

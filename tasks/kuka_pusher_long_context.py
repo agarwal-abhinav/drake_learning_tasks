@@ -252,6 +252,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         if self.cfg.export_diagram:
             self.export_diagram("kuka_pusher_diagram.pdf")
+
+        self.save_data_every = int(self.save_data_dt / self.dt)
     
     def reset_robot(self, seed: int = 42):
         np.random.seed(seed)
@@ -336,6 +338,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             trajectory[f"cam_rgb_{camera_name}"] = []
 
         rollout_start_time = simulator.get_context().get_time()
+        running_index = 0
 
         terminate_teleop = False
         while not terminate_teleop:
@@ -355,7 +358,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
             diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, target_pose)
             
-            if (self.mode == Mode.DATA_COLLECTION and (((simulator.get_context().get_time() - rollout_start_time) % self.save_data_dt)) <= 1e-10):
+            # if this is the first iteration
+            if len(trajectory['time']) == 0 and self.mode == Mode.DATA_COLLECTION:
+                data_collection_start_index = running_index
+            
+            if (self.mode == Mode.DATA_COLLECTION and (running_index - data_collection_start_index)%self.save_data_every == 0):
                 # get the pusher pose, velocity 
                 pusher_pose = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame)
                 pusher_pos = np.array([pusher_pose.translation()])
@@ -431,6 +438,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 terminate_teleop = True
 
             simulator.AdvanceTo(simulator.get_context().get_time() + self.dt)
+            running_index += 1
 
         print("\n")
         return trajectory
