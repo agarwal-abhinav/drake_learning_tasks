@@ -516,6 +516,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         for key in trajectory.keys(): 
             this_save_path = f'{save_path}/{i}/{key}.npy'
+            assert len(trajectory[key]) > 0, "No data collected for this trajectory key!"
             np.save(this_save_path, np.array(trajectory[key]))
         
         # with open(f'{save_path}/{i}/run_config.yaml', 'w') as f:
