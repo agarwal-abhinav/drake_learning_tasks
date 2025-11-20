@@ -8,3 +8,5 @@
 
 Once you have saved data, you can visualize it using: `python scripts/run_task_with_controller.py run_methods="[check_saved_trajectory_images]"`
 This will visualize the camera images stored using opencv rendering. 
+
+Files in the `scripts/dev_scripts` directory do not currently follow hydra and can be used as scratch scripts to test code. 

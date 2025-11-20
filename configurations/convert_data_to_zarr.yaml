@@ -1,0 +1,19 @@
+data_paths: 
+  "data/kuka_pusher_long_context/start_bin_0": 50
+
+zarr_path: "data/kuka_pusher_long_context/start_bin_0.zarr"
+zarr_dt: 0.1 
+
+image_label_file_map: 
+  "overhead_camera": "cam_rgb_overhead_camera.npy"
+  "wrist_camera": "cam_rgb_wrist_camera.npy"
+
+proprioception_files: 
+  - ["pusher_pos.npy", 2]
+
+action_as_shifted_prop: true 
+
+zarr_image_width: 128 
+zarr_image_height: 128
+
+remove_start_end_idling: true 
