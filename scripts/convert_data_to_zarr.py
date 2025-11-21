@@ -188,7 +188,7 @@ def main(cfg: DictConfig) -> None:
     assert concatenated_proprioceptions.shape[0] == concatenated_actions.shape[0]
     
     data_group.create_dataset(
-        'proprioception', 
+        'state', 
         data=concatenated_proprioceptions, 
         chunks=prop_chunk_size
     )

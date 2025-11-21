@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
-from typing import Type
+from typing import Type, Callable, Dict
 import pydot
 
 from controllers.base_controller import BaseController
 
 class BaseTask(ABC): 
 
-    compatible_controllers: set[Type[BaseController]] = set()
+    compatible_controllers: Dict[Type[BaseController], Callable] = {}
 
     def __init__(self, 
                  root_cfg: DictConfig
@@ -18,6 +18,7 @@ class BaseTask(ABC):
         self.debug = root_cfg.debug 
 
         self._controller = None 
+        self.simulator = None # when controller is set, simulator must be initialized
 
     @property
     def controller(self) -> BaseController: 
@@ -29,15 +30,18 @@ class BaseTask(ABC):
         if self._controller is not None: 
             raise ValueError("Controller has already been set for this task.")
         
-        compat = getattr(self, "compatible_controllers", set())
-        if compat and not any(isinstance(value, c) for c in compat): 
-            allowed = [c.__name__ for c in compat]
+        compat = getattr(self, "compatible_controllers", dict())
+        if compat and not any(isinstance(value, c) for c in compat.keys()): 
+            allowed = [c.__name__ for c in compat.keys()]
             raise ValueError(
                 f"Controller of type {type(value).__name__} is not compatible with this task. "
                 f"Allowed controller types: {allowed}"
             )
         
         self._controller = value 
+        self.compatible_controllers[type(value)](self)
+
+        assert self.simulator is not None, "Simulator must be initialized in the task before setting the controller."
 
     @abstractmethod
     def reset_robot(self) -> None: 

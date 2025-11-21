@@ -20,10 +20,15 @@ from utils.meshcat_utils import ConfigureAndStartMeshcat
 from controllers.base_controller import BaseController
 from controllers.ee_debug_controller import DebugEndEffectorController
 from controllers.ee_gamepad_planar_controller import GamePadEndEffectorPlanarController
+from controllers.ee_diffusion_planar_controller import PlanarDiffusionPolicyDrakeController
+
 
 from pydrake.all import (
+    AbstractValue, 
+    Context, 
     DiagramBuilder,
     Frame,
+    LeafSystem, 
     LogVectorOutput,
     ModelDirectives,
     MultibodyPlant,
@@ -36,6 +41,7 @@ from pydrake.all import (
     RobotDiagram,
     Simulator,
     WeldJoint, 
+    RotationMatrix
 )
 
 from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting
@@ -67,10 +73,38 @@ def pre_finalize_function(dict_of_bins):
     
     return parser_pre_finalize_function
 
+class DiffusionToDiffIKBridge(LeafSystem): 
+    def __init__(self, fixed_z_position, translation_offset=np.array([0.0, 0.0, 0.0])): 
+        super().__init__()
+
+        self.DeclareVectorInputPort(
+            "diffusion_action", 
+            2
+        )
+
+        self.DeclareAbstractOutputPort(
+            "X_WG", 
+            lambda: AbstractValue.Make(RigidTransform()), 
+            self.CalcEEPose
+        )
+
+        self.z_position = fixed_z_position
+        self.translation_offset = translation_offset
+
+    def CalcEEPose(self, context: Context, output):
+        diffusion_action = self.get_input_port(0).Eval(context)
+        target_pos = np.array([diffusion_action[0], diffusion_action[1], self.z_position]) + self.translation_offset
+        target_rot = RotationMatrix().matrix()
+
+        target_pose = RigidTransform(Quaternion(target_rot), target_pos)
+
+        output.set_value(target_pose)
+
 class KukaPlanarPusherLongContextBlock(BaseTask):
-    compatible_algorithms = {
-        DebugEndEffectorController, 
-        GamePadEndEffectorPlanarController,
+    compatible_controllers = {
+        DebugEndEffectorController: lambda instance: instance._initialize_basic_non_leafsystem_controller(), 
+        GamePadEndEffectorPlanarController: lambda instance: instance._initialize_basic_non_leafsystem_controller(),
+        PlanarDiffusionPolicyDrakeController: lambda instance: instance._initialize_diffusion_planar_controller()
     }
 
     def __init__(self, root_cfg: DictConfig) -> None:
@@ -100,7 +134,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         self.meshcat = ConfigureAndStartMeshcat(scenario)
         # self.meshcat.AddButton("Stop Simulation", "Escape")
 
-        # Hardware Station (TODO: camera should be a part of this, find a way to do that automatically) 
         package_path = os.path.abspath("models/package.xml")
         package_list = [package_path]
         self.station = MakeHardwareStation(
@@ -229,9 +262,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         for camera_name in self.scenario.cameras.keys(): 
             builder.ExportOutput(self.station.GetOutputPort(f"{camera_name}.rgb_image"), f"{camera_name}")
 
+        builder.ExportInput(self.diff_ik.GetInputPort("X_AE_desired"), "X_AE_desired")
+        builder.ExportOutput(self.station.GetOutputPort("body_poses"), "body_poses")
+
         self.diagram = builder.Build()
-        self.simulator = Simulator(self.diagram)
-        self.simulator.set_target_realtime_rate(1.0)
 
         # collect reference names for data collection 
         self.pusher_frame = self.plant.GetFrameByName("pusher_end", self.plant.GetModelInstanceByName("pusher"))
@@ -250,11 +284,77 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             self.keypoint_frame_refs.append(self.plant.GetFrameByName(name, \
                                                                       self.plant.GetModelInstanceByName(self.cfg.slider_name)))
 
+        self.save_data_every = int(self.save_data_dt / self.dt)
+    
+    # controller on-boarding methods 
+    # for controllers which aren't leaf systems, simply initialize a simulator 
+    # for controllers that are, create another diagram for controller side, link it with the main diagram, then simulator 
+    def _initialize_basic_non_leafsystem_controller(self): 
+        self.simulator = Simulator(self.diagram)
+        self.simulator.set_target_realtime_rate(1.0)
+
         if self.cfg.export_diagram:
             self.export_diagram("kuka_pusher_diagram.pdf")
 
-        self.save_data_every = int(self.save_data_dt / self.dt)
-    
+    def _initialize_diffusion_planar_controller(self): 
+        from pydrake.all import ZeroOrderHold
+
+        self.controller: PlanarDiffusionPolicyDrakeController 
+
+        iiwa_base_translation_in_world = self.iiwa_frame.CalcPose(
+            self.plant.CreateDefaultContext(), self.plant.world_frame()
+        ).translation().flatten()
+
+        # build a controller side diagram 
+        control_side_diagram_builder = DiagramBuilder()
+        control_side_diagram_builder.AddSystem(self.controller)
+        zo_hold = control_side_diagram_builder.AddSystem(
+            ZeroOrderHold(
+                self.controller.cfg.controller_dt,  
+                vector_size=2
+            )
+        )
+        diff_to_diff_ik = control_side_diagram_builder.AddSystem(
+            DiffusionToDiffIKBridge(
+                fixed_z_position=self.reset_pose.translation()[2], translation_offset=iiwa_base_translation_in_world
+            )
+        )
+        control_side_diagram_builder.Connect(
+            self.controller.GetOutputPort("planar_command_out"),
+            zo_hold.get_input_port(0)
+        )
+        control_side_diagram_builder.Connect(
+            zo_hold.get_output_port(0), 
+            diff_to_diff_ik.GetInputPort("diffusion_action")
+        )
+
+        # add current diagram to controller side diagram 
+        control_side_diagram_builder.AddSystem(self.diagram)
+        control_side_diagram_builder.Connect(
+            diff_to_diff_ik.GetOutputPort("X_WG"),
+            self.diagram.GetInputPort("X_AE_desired")
+        )
+        control_side_diagram_builder.Connect(
+            self.diagram.GetOutputPort("body_poses"),
+            self.controller.GetInputPort("body_poses")
+        )
+        for camera_name in self.scenario.cameras.keys(): 
+            control_side_diagram_builder.Connect(
+                self.diagram.GetOutputPort(f"{camera_name}"),
+                self.controller.GetInputPort(f"{camera_name}_in")
+            )
+
+        control_side_diagram = control_side_diagram_builder.Build()
+
+        self.simulator = Simulator(control_side_diagram)
+        self.simulator.set_target_realtime_rate(1.0)
+
+        self.initial_location_in_iiwa0 = self.reset_pose.translation().flatten()[:2] - iiwa_base_translation_in_world[:2]
+        self.controller.reset(
+            initial_planar_command=self.initial_location_in_iiwa0,
+            ee_body_index=self.pusher_body.index()
+        )
+
     def reset_robot(self, seed: int = 42):
         np.random.seed(seed)
         random.seed(seed)
@@ -310,8 +410,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         print(f"theta: {round(random_theta)} degrees\n")
 
     def teleop(self):
-        from pydrake.all import RigidTransform, Quaternion
-
         self.controller: BaseController
         self.controller.reset(meshcat=self.meshcat)
 
@@ -337,13 +435,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         for camera_name in self.scenario.cameras.keys(): 
             trajectory[f"cam_rgb_{camera_name}"] = []
 
-        rollout_start_time = simulator.get_context().get_time()
         running_index = 0
 
         terminate_teleop = False
         while not terminate_teleop:
             context = simulator.get_mutable_context()
-            station_context = station.GetMyMutableContextFromRoot(context)
             plant_context = plant.GetMyMutableContextFromRoot(context)
             diff_ik_context = diff_ik.GetMyMutableContextFromRoot(context)
             scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
@@ -443,6 +539,26 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         print("\n")
         return trajectory
     
+    def diffusion_rollout(self, max_time: float = 20.0): 
+        self.controller: PlanarDiffusionPolicyDrakeController
+        self.controller.reset(
+            initial_planar_command=self.initial_location_in_iiwa0,
+            ee_body_index=self.pusher_body.index()
+        )
+
+        simulator = self.simulator
+        plant = self.plant
+        scene_graph = self.scene_graph
+
+        context = simulator.get_mutable_context()
+        plant_context = plant.GetMyMutableContextFromRoot(context)
+        scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
+
+        num_steps = int(max_time / self.dt)
+
+        for step in range(num_steps): 
+            simulator.AdvanceTo(simulator.get_context().get_time() + self.dt)
+
     def plot_state_log(self, log):
         t = log.sample_times()
         data = log.data()
@@ -507,10 +623,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         save_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
 
-        # i = 0
-        # while os.path.exists(f'{save_path}/{i}'): 
-        #     i += 1
-
         i = self.seed
         os.makedirs(f'{save_path}/{i}')
 
@@ -518,11 +630,34 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             this_save_path = f'{save_path}/{i}/{key}.npy'
             assert len(trajectory[key]) > 0, "No data collected for this trajectory key!"
             np.save(this_save_path, np.array(trajectory[key]))
-        
-        # with open(f'{save_path}/{i}/run_config.yaml', 'w') as f:
-        #     yaml.dump(self.root_cfg, f)
 
         shutil.copytree(HydraConfig.get().runtime.output_dir, f'{save_path}/{i}/hydra_logs')
+
+    def run_eval(self): 
+        logging.getLogger(
+            "drake"
+        ).setLevel(logging.INFO)
+        logging.getLogger(
+            "utils/iiwa_planner"
+        ).setLevel(logging.DEBUG)
+
+        assert self.controller is not None, "Evaluation controller algorithm not set for the task."
+
+        if self.controller.cfg.eval_min_seed is not None: 
+            seeds = list(range(self.controller.cfg.eval_min_seed, self.controller.cfg.eval_max_seed))
+        else: 
+            seeds = [42]
+        
+        m = 0
+        while True: 
+            if m < len(seeds): 
+                seed = seeds[m]
+                m += 1 
+            else: 
+                seed = random.randint(0, 10000)
+            print(f"Starting new eval with seed {seed}...\n")
+            self.reset_robot(seed)
+            self.diffusion_rollout(self.controller.cfg.eval_max_time)
 
     def run_teleop(self):
         logging.getLogger(

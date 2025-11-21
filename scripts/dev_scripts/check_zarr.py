@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     overhead_images = data_group["overhead_camera"]
     wrist_images = data_group["wrist_camera"]
-    proprioceptions = data_group["proprioception"]
+    proprioceptions = data_group["state"]
     actions = data_group["action"]
 
     breakpoint()

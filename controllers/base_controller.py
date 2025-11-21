@@ -5,6 +5,8 @@ from typing import Dict
 
 import numpy as np 
 
+from pydrake.all import LeafSystem 
+
 @dataclass
 class BatchedPose: 
     pos: np.ndarray
@@ -23,3 +25,14 @@ class BaseController(ABC):
     @abstractmethod
     def update(self, obs_dict: Dict, *args, **kwargs) -> None: 
         raise NotImplementedError
+    
+class BaseControllerLeafSystem(LeafSystem): 
+    def __init__(self, root_cfg=None): 
+        super().__init__()
+
+        self.root_cfg = root_cfg
+        self.cfg = root_cfg.controller
+        self.debug = root_cfg.debug
+    
+    def reset(self): 
+        raise NotImplementedError 
