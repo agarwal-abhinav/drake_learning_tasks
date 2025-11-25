@@ -56,8 +56,10 @@ class BaseTask(ABC):
         else: 
             raise ValueError(f"Method {method} is not defined in {self.__class__.__name__}.")
         
-    def export_diagram(self, filename: str):
-        pydot.graph_from_dot_data(self.diagram.GetGraphvizString())[0].write_pdf(  # type: ignore
+    def export_diagram(self, filename: str, diagram=None) -> None:
+        if diagram is None: 
+            diagram = self.diagram
+        pydot.graph_from_dot_data(diagram.GetGraphvizString())[0].write_pdf(  # type: ignore
             filename
         )
         print(f"Saved diagram to: {filename}")

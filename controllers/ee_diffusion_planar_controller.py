@@ -92,7 +92,6 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             self._actions.extend(predicted_actions)
 
         self.current_action = self._actions.popleft()
-        breakpoint()
         output.set_value(self.current_action) 
 
     def _update_deques(self, context: Context): 

@@ -74,7 +74,10 @@ def pre_finalize_function(dict_of_bins):
     return parser_pre_finalize_function
 
 class DiffusionToDiffIKBridge(LeafSystem): 
-    def __init__(self, fixed_z_position, translation_offset=np.array([0.0, 0.0, 0.0])): 
+    def __init__(self, 
+                 fixed_z_position, 
+                 fixed_orientation, 
+                 translation_offset=np.array([0.0, 0.0, 0.0])): 
         super().__init__()
 
         self.DeclareVectorInputPort(
@@ -89,14 +92,14 @@ class DiffusionToDiffIKBridge(LeafSystem):
         )
 
         self.z_position = fixed_z_position
+        self.fixed_orientation = fixed_orientation
         self.translation_offset = translation_offset
 
     def CalcEEPose(self, context: Context, output):
         diffusion_action = self.get_input_port(0).Eval(context)
         target_pos = np.array([diffusion_action[0], diffusion_action[1], self.z_position]) + self.translation_offset
-        target_rot = RotationMatrix().matrix()
 
-        target_pose = RigidTransform(Quaternion(target_rot), target_pos)
+        target_pose = RigidTransform(Quaternion(self.fixed_orientation), target_pos)
 
         output.set_value(target_pose)
 
@@ -316,7 +319,9 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         )
         diff_to_diff_ik = control_side_diagram_builder.AddSystem(
             DiffusionToDiffIKBridge(
-                fixed_z_position=self.reset_pose.translation()[2], translation_offset=iiwa_base_translation_in_world
+                fixed_z_position=self.reset_pose.translation()[2], 
+                fixed_orientation=self.reset_pose.rotation().matrix(), 
+                translation_offset=iiwa_base_translation_in_world
             )
         )
         control_side_diagram_builder.Connect(
@@ -355,6 +360,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             ee_body_index=self.pusher_body.index()
         )
 
+        if self.debug: 
+            self.export_diagram("kuka_pusher_diffusion_controller_diagram.pdf", control_side_diagram)
+            self.diff_to_diff_ik = diff_to_diff_ik
+            self.zo_hold = zo_hold
+
     def reset_robot(self, seed: int = 42):
         np.random.seed(seed)
         random.seed(seed)
@@ -379,11 +389,12 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         self.iiwa_planner.GetInputPort("last_reset_time").FixValue(iiwa_planner_context, [context.get_time()])
         self.iiwa_planner.GetInputPort("reset_position").FixValue(iiwa_planner_context, q0[:7])
 
-        # Diff-IK uses the world frame as the reference frame.
-        X_W_iiwa0 = self.iiwa_frame.CalcPose(plant_context, self.plant.world_frame())
-        X_iiwa0_reset = self.reset_pose
-        X_W_reset = X_W_iiwa0 @ X_iiwa0_reset
-        self.diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, X_W_reset)
+        # # Diff-IK uses the world frame as the reference frame.
+        if not isinstance(self.controller, LeafSystem): 
+            X_W_iiwa0 = self.iiwa_frame.CalcPose(plant_context, self.plant.world_frame())
+            X_iiwa0_reset = self.reset_pose
+            X_W_reset = X_W_iiwa0 @ X_iiwa0_reset
+            self.diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, X_W_reset)
 
         # Print a random initial pose for the T
         initial_location_type = self.cfg.initial_location_type 
@@ -553,6 +564,15 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         context = simulator.get_mutable_context()
         plant_context = plant.GetMyMutableContextFromRoot(context)
         scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
+
+        if self.debug: 
+            diff_to_diff_ik = self.diff_to_diff_ik
+            diff_to_diff_ik_context = diff_to_diff_ik.GetMyMutableContextFromRoot(context)
+            controller = self.controller
+            controller_context = controller.GetMyMutableContextFromRoot(context)
+
+            zo_hold = self.zo_hold
+            zo_hold_context = zo_hold.GetMyMutableContextFromRoot(context)
 
         num_steps = int(max_time / self.dt)
 
