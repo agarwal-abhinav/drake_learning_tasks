@@ -5,7 +5,9 @@ from pydrake.all import(
     PixelType, 
     Value, 
     Image, 
-    Context
+    Context, 
+    Rgba, 
+    Sphere, 
 ) 
 
 from collections import deque
@@ -34,7 +36,9 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                                                 load_normalizer_from_file=load_normalizer_from_file, 
                                                 infer_frozen_policy=infer_frozen_policy)
 
-        self._actions = deque([], maxlen=self.policy.n_action_steps)
+        self.n_action_steps = cfg.n_action_steps_override
+        self.n_obs_steps = self.policy.n_obs_steps
+        self._actions = deque([], maxlen=self.n_action_steps)
 
         self.obs_names = list(training_cfg.shape_meta.obs.keys())
         self.obs_shapes = training_cfg.shape_meta.obs
@@ -87,12 +91,36 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                 predicted_actions = self.policy.predict_action(
                     obs_dict, 
                     use_DDIM=self.use_DDIM
-                )['action'][0].cpu().numpy()
+                )['action_pred'][0].cpu().numpy()
 
-            self._actions.extend(predicted_actions)
+            if self.debug: 
+                self._visualize_trajectory(predicted_actions)
+            
+            self._actions.extend(predicted_actions[self.n_obs_steps-1:self.n_obs_steps-1 + self.n_action_steps])
 
         self.current_action = self._actions.popleft()
         output.set_value(self.current_action) 
+
+    def _visualize_trajectory(self, trajectory: np.ndarray):
+        """Visualize predicted trajectory in meshcat with points at each timestep."""
+        assert self.meshcat is not None, "Meshcat instance is not set for visualization."
+        # Clear previous trajectory visualization
+        self.meshcat.Delete("predicted_trajectory")
+
+        # Draw each action as a sphere
+        for i, action in enumerate(trajectory):
+            # Green for executed actions (first n_action_steps), yellow for others
+            if i < self.n_obs_steps -1 + self.n_action_steps and i >= self.n_obs_steps-1:
+                color = Rgba(0.0, 1.0, 0.0, 0.8)  # Green
+            else:
+                color = Rgba(1.0, 1.0, 0.0, 0.8)  # Yellow
+
+            sphere_path = f"predicted_trajectory/point_{i}"
+            self.meshcat.SetObject(sphere_path, Sphere(0.005), color)
+            # Position at (x, y, z=0.0) - assuming planar pushing
+            self.meshcat.SetTransform(sphere_path, RigidTransform([action[0]+self.translation_offset[0], 
+                                                                   action[1]+self.translation_offset[1], 
+                                                                   0.0]))
 
     def _update_deques(self, context: Context): 
         camera_images = {}
@@ -115,7 +143,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             
             else: 
                 self._dict_of_obs_buffers[name].append(
-                    planar_translation[: self.obs_shapes[name].shape[0]]
+                    planar_translation[: self.obs_shapes[name].shape[0]] - self.translation_offset
                 )
     
     def _deque_to_dict(self): 
@@ -146,7 +174,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         
         return data 
     
-    def reset(self, initial_planar_command, ee_body_index): 
+    def reset(self, initial_planar_command, ee_body_index, meshcat=None, translation_offset=np.array([0.0, 0.0])): 
         self._actions.clear()
         for key in self._dict_of_obs_buffers.keys(): 
             self._dict_of_obs_buffers[key].clear()
@@ -154,7 +182,11 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         self.current_action = initial_planar_command
 
         self._planar_body_index = ee_body_index
-    
+
+        self.meshcat = meshcat
+
+        self.translation_offset = translation_offset # add to go from iiwa to world, subtract for world to iiwa 
+
     def update(self):
         print("Update method called - no operation defined.")
 

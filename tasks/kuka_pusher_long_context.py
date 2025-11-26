@@ -304,7 +304,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         self.controller: PlanarDiffusionPolicyDrakeController 
 
-        iiwa_base_translation_in_world = self.iiwa_frame.CalcPose(
+        self.iiwa_base_translation_in_world = self.iiwa_frame.CalcPose(
             self.plant.CreateDefaultContext(), self.plant.world_frame()
         ).translation().flatten()
 
@@ -321,7 +321,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             DiffusionToDiffIKBridge(
                 fixed_z_position=self.reset_pose.translation()[2], 
                 fixed_orientation=self.reset_pose.rotation().matrix(), 
-                translation_offset=iiwa_base_translation_in_world
+                translation_offset=self.iiwa_base_translation_in_world
             )
         )
         control_side_diagram_builder.Connect(
@@ -354,10 +354,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         self.simulator = Simulator(control_side_diagram)
         self.simulator.set_target_realtime_rate(1.0)
 
-        self.initial_location_in_iiwa0 = self.reset_pose.translation().flatten()[:2] - iiwa_base_translation_in_world[:2]
+        self.initial_location_in_iiwa0 = self.reset_pose.translation().flatten()[:2] - self.iiwa_base_translation_in_world[:2]
         self.controller.reset(
             initial_planar_command=self.initial_location_in_iiwa0,
-            ee_body_index=self.pusher_body.index()
+            ee_body_index=self.pusher_body.index(),
+            meshcat=self.meshcat, translation_offset=self.iiwa_base_translation_in_world[:2]
         )
 
         if self.debug: 
@@ -554,7 +555,9 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         self.controller: PlanarDiffusionPolicyDrakeController
         self.controller.reset(
             initial_planar_command=self.initial_location_in_iiwa0,
-            ee_body_index=self.pusher_body.index()
+            ee_body_index=self.pusher_body.index(), 
+            meshcat=self.meshcat, 
+            translation_offset=self.iiwa_base_translation_in_world[:2]
         )
 
         simulator = self.simulator
@@ -728,7 +731,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             for camera_name in self.scenario.cameras.keys(): 
                 loaded_images_this = np.load(os.path.join(data_path, traj_dir, f"cam_rgb_{camera_name}.npy"))
                 loaded_images.append(loaded_images_this)
-                breakpoint()
 
                 for frame in loaded_images_this: 
                     cv2.imshow('video', cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_RGBA2BGR))

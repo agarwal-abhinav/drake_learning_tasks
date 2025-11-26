@@ -44,7 +44,11 @@ def clip_start_end_idle(traj, eps=1e-5, keep_idle=2):
     first_move_diff_idx = moving_idx[0]
     last_move_diff_idx = moving_idx[-1]
 
-    first_move_sampling = first_move_diff_idx - keep_idle
+    if first_move_diff_idx - keep_idle < 0: 
+        first_move_sampling = 0
+    else: 
+        first_move_sampling = first_move_diff_idx - keep_idle
+
     last_move_sampling = last_move_diff_idx + 1 + keep_idle
 
     return first_move_sampling, last_move_sampling

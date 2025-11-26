@@ -1,6 +1,6 @@
 _target_: controllers.ee_diffusion_planar_controller.PlanarDiffusionPolicyDrakeController
 
-checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/test_lc_task/10_obs/checkpoints/latest.ckpt"
+checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/test_lc_initial/5_obs/checkpoints/latest.ckpt"
 relative_path_to_diffusion_model: "../../RLG/gcs-diffusion"
 
 load_normalizer_from_file: true 
@@ -17,3 +17,5 @@ eval_max_seed: 1010
 eval_max_time: 30.0 
 
 controller_dt: 0.1
+
+n_action_steps_override: 10
