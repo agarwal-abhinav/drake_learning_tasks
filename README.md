@@ -10,3 +10,5 @@ Once you have saved data, you can visualize it using: `python scripts/run_task_w
 This will visualize the camera images stored using opencv rendering. 
 
 Files in the `scripts/dev_scripts` directory do not currently follow hydra and can be used as scratch scripts to test code. 
+
+For policy inference run `python scripts/run_task_with_controller.py run_methods="[run_eval]" controller=ee_diffusion_planar_controller` 

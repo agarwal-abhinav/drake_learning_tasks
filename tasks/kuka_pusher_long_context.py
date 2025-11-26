@@ -41,7 +41,6 @@ from pydrake.all import (
     RobotDiagram,
     Simulator,
     WeldJoint, 
-    RotationMatrix
 )
 
 from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting
@@ -70,6 +69,17 @@ def pre_finalize_function(dict_of_bins):
                 X_FM=xyz_rpy_deg(bin_properties[1], [0, 0, 0])
             )
             plant.AddJoint(weld_joint)
+
+            if len(bin_properties) > 2:
+                new_model_instance_2 = parser.AddModelsFromUrl(url=bin_properties[2])[0]
+                plant.RenameModelInstance(model_instance=new_model_instance_2, name=f"pusher_goal_for_{bin_name}")
+                weld_joint_2 = WeldJoint(
+                    name=f"pusher_{bin_name}_weld_joint",
+                    frame_on_parent_F=plant.world_frame(),
+                    frame_on_child_M=plant.GetFrameByName("cylinder", new_model_instance_2),
+                    X_FM=xyz_rpy_deg(bin_properties[3], [0, 0, 0])
+                )
+                plant.AddJoint(weld_joint_2)
     
     return parser_pre_finalize_function
 

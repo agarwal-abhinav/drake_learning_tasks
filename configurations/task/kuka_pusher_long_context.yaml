@@ -22,12 +22,12 @@ scenario_data: |
             rotation: !Rpy { deg: [0, 0, 0]}
     - add_model: 
         name: cylinder_goal
-        file: package://models/pusher_and_cylinder/cylinder_no_collision.sdf
+        file: package://models/pusher_and_cylinder/cylinder_no_collision_green.sdf
     - add_weld:
         parent: world
         child: cylinder_goal::cylinder
         X_PC: 
-            translation: [0.16, 0, 0.02]
+            translation: [0.16, 0, -0.02]
             rotation: !Rpy { deg: [0, 0, 0]}
     - add_directives: 
         file: package://models/robot_directives/add_table_welded_iiwa_with_pusher.dmd.yaml
@@ -133,18 +133,28 @@ bins:
   0: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.25, -0.20, 0.02]
+    - "package://models/pusher_and_cylinder/cylinder_no_collision.sdf"
+    - [0.16, -0.20, -0.02]
   1: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.36, -0.17, 0.02]
+    - "package://models/pusher_and_cylinder/cylinder_no_collision.sdf"
+    - [0.36, -0.25, -0.02]
   2: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.38, 0, 0.02]
+    - "package://models/pusher_and_cylinder/cylinder_no_collision.sdf"
+    - [0.47, 0., -0.02]
   3: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.36, 0.17, 0.02]
+    - "package://models/pusher_and_cylinder/cylinder_no_collision.sdf"
+    - [0.36, 0.25, -0.02]
   4: 
     - "package://models/boxes/box_blue_inflated_no_collision.sdf"
     - [0.25, 0.20, 0.02]
+    - "package://models/pusher_and_cylinder/cylinder_no_collision.sdf"
+    - [0.16, 0.20, -0.02]
 
 # for iiwa_planner
 # nominal_joint_positions: [0.41, 0.88, -0.65, -1.45, 0.59, 1.01, 2.76]
