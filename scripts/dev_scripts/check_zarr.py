@@ -10,7 +10,7 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 if __name__ == "__main__":
-    zarr_path = "data/kuka_pusher_long_context_test_data/start_bin_0.zarr"
+    zarr_path = "data/kuka_pusher_long_context_different_returns/start_bin_0.zarr"
 
     root = zarr.open_group(zarr_path, mode='r')
     data_group = root['data']
