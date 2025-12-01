@@ -1,6 +1,9 @@
 _target_: controllers.ee_diffusion_planar_controller.PlanarDiffusionPolicyDrakeController
 
-checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/test_lc_initial/5_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_planar_pushing_basic/new_architecture/constant_obs_steps/10_obs/checkpoints/latest.ckpt"
+checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/48_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/5_obs/checkpoints/epoch=0126-val_loss=0.0236-val_ddim_mse=0.0004.ckpt"
+
 relative_path_to_diffusion_model: "../../RLG/gcs-diffusion"
 
 load_normalizer_from_file: true 
@@ -11,11 +14,11 @@ policy_device: "cuda"
 
 initial_planar_command: [0.3, 0.0, 0.175] # this is only used at start, after which reset takes over 
 
-eval_min_seed: 1000
-eval_max_seed: 1010 
+eval_min_seed: 2000
+eval_max_seed: 2010 
 
-eval_max_time: 30.0 
+eval_max_time: 50.0
 
 controller_dt: 0.1
 
-n_action_steps_override: 10
+n_action_steps_override: 12

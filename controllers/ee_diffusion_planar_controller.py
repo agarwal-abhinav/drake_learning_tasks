@@ -8,6 +8,7 @@ from pydrake.all import(
     Context, 
     Rgba, 
     Sphere, 
+    InputPortIndex
 ) 
 
 from collections import deque
@@ -61,6 +62,12 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                     model_value=Value(Image[PixelType.kRgba8U]())
                 )
 
+        # if the controller is always supposed to be active, set the value for this to 1 permanently 
+        self.use_controller_in = self.DeclareAbstractInputPort(
+            "use_controller", 
+            AbstractValue.Make(InputPortIndex(0)), 
+        )
+
         # declare output ports 
         self.output = self.DeclareVectorOutputPort(
             "planar_command_out", 
@@ -78,6 +85,12 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
     def DoCalcOutput(self, context: Context, output): 
         time = context.get_time()
 
+        use_controller = self.use_controller_in.Eval(context)
+
+        if use_controller != InputPortIndex(1): 
+            output.set_value(self.initial_planar_command)
+            return 
+    
         # wait time at the start 
         while len(self._dict_of_obs_buffers[self.obs_names[0]]) < self.policy.n_obs_steps - 1: 
             self._update_deques(context) 
@@ -174,17 +187,18 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         
         return data 
     
-    def reset(self, initial_planar_command, ee_body_index, meshcat=None, translation_offset=np.array([0.0, 0.0])): 
+    def reset(self, meshcat): 
         self._actions.clear()
         for key in self._dict_of_obs_buffers.keys(): 
             self._dict_of_obs_buffers[key].clear()
         
-        self.current_action = initial_planar_command
-
-        self._planar_body_index = ee_body_index
-
         self.meshcat = meshcat
 
+        self.current_action = self.initial_planar_command
+
+    def set_post_connection_values(self, initial_planar_command, ee_body_index, translation_offset=np.array([0.0, 0.0])): 
+        self._planar_body_index = ee_body_index
+        self.initial_planar_command = initial_planar_command
         self.translation_offset = translation_offset # add to go from iiwa to world, subtract for world to iiwa 
 
     def update(self):

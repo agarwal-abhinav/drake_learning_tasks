@@ -41,6 +41,7 @@ from pydrake.all import (
     RobotDiagram,
     Simulator,
     WeldJoint, 
+    InputPortIndex
 )
 
 from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting
@@ -277,6 +278,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         builder.ExportInput(self.diff_ik.GetInputPort("X_AE_desired"), "X_AE_desired")
         builder.ExportOutput(self.station.GetOutputPort("body_poses"), "body_poses")
+        # builder.ExportOutput(self.iiwa_planner.GetOutputPort("control_mode"), "planner_control_mode")
 
         self.diagram = builder.Build()
 
@@ -358,17 +360,25 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 self.diagram.GetOutputPort(f"{camera_name}"),
                 self.controller.GetInputPort(f"{camera_name}_in")
             )
+        # control_side_diagram_builder.Connect(
+        #     self.diagram.GetOutputPort("planner_control_mode"), 
+        #     self.controller.GetInputPort("use_controller")
+        # )
 
         control_side_diagram = control_side_diagram_builder.Build()
 
         self.simulator = Simulator(control_side_diagram)
         self.simulator.set_target_realtime_rate(1.0)
 
-        self.initial_location_in_iiwa0 = self.reset_pose.translation().flatten()[:2] - self.iiwa_base_translation_in_world[:2]
-        self.controller.reset(
+        self.initial_location_in_iiwa0 = self.reset_pose.translation().flatten()[:2] 
+
+        self.controller.set_post_connection_values(
             initial_planar_command=self.initial_location_in_iiwa0,
-            ee_body_index=self.pusher_body.index(),
-            meshcat=self.meshcat, translation_offset=self.iiwa_base_translation_in_world[:2]
+            ee_body_index=self.pusher_body.index(), 
+            translation_offset=self.iiwa_base_translation_in_world[:2]
+        )
+        self.controller.reset(
+            meshcat=self.meshcat
         )
 
         if self.debug: 
@@ -386,6 +396,13 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         simulator = self.simulator
         diff_ik = self.diff_ik
         self.simulator.Initialize()
+
+        if isinstance(self.controller, LeafSystem): 
+            # set the controller to not be active during reset 
+            self.controller.GetInputPort("use_controller").FixValue(
+                self.controller.GetMyMutableContextFromRoot(simulator.get_mutable_context()), 
+                InputPortIndex(0)
+            )
 
         # Disable contact forces in pretty mode
         self.meshcat.SetProperty("/drake/contact_forces", "visible", False)
@@ -407,7 +424,12 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             X_W_reset = X_W_iiwa0 @ X_iiwa0_reset
             self.diff_ik.GetInputPort("X_AE_desired").FixValue(diff_ik_context, X_W_reset)
 
-        # Print a random initial pose for the T
+        # Move to start
+        self.simulator.AdvanceTo(context.get_time() + self.cfg.initial_delay + 0.5)
+        traj_length = self.iiwa_planner.get_trajectory_length()
+        self.simulator.AdvanceTo(context.get_time() + traj_length)
+
+        # Print a random initial pose for the block
         initial_location_type = self.cfg.initial_location_type 
         initial_location_deltas = self.cfg.initial_location_deltas
 
@@ -420,11 +442,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         current_slider_world_pose = self.slider_frame.CalcPose(plant_context, self.plant.world_frame())
         new_slider_world_pose = xyz_rpy_deg([random_x, random_y, current_slider_world_pose.translation()[2]], [0, 0, random_theta])
         plant.SetFreeBodyPose(plant_context, self.slider_body, new_slider_world_pose)
-
-        # Move to start
-        self.simulator.AdvanceTo(context.get_time() + self.cfg.initial_delay + 0.5)
-        traj_length = self.iiwa_planner.get_trajectory_length()
-        self.simulator.AdvanceTo(context.get_time() + traj_length)
+        self.simulator.AdvanceTo(context.get_time() + 0.5)
 
         print("\nRandom initial slider pose:")
         print(f"x: {100*random_x:.2f}cm")
@@ -564,11 +582,14 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
     def diffusion_rollout(self, max_time: float = 20.0): 
         self.controller: PlanarDiffusionPolicyDrakeController
         self.controller.reset(
-            initial_planar_command=self.initial_location_in_iiwa0,
-            ee_body_index=self.pusher_body.index(), 
-            meshcat=self.meshcat, 
-            translation_offset=self.iiwa_base_translation_in_world[:2]
+            self.meshcat
         )
+
+        if isinstance(self.controller, LeafSystem): 
+            self.controller.GetInputPort("use_controller").FixValue(
+                self.controller.GetMyMutableContextFromRoot(self.simulator.get_mutable_context()), 
+                InputPortIndex(1)
+            )
 
         simulator = self.simulator
         plant = self.plant
