@@ -6,7 +6,9 @@ from pydrake.all import (
     LeafSystem, 
     Value, 
     Image, 
-    PixelType
+    PixelType, 
+    HPolyhedron, 
+    VPolytope
 )
 import matplotlib.pyplot as plt
 
@@ -30,6 +32,31 @@ def change_camera_to_point_lighting(scenario: Scenario, main_camera_name: str = 
             camera_config.renderer_name = "RenderEngineVtk"
 
     return scenario
+
+def create_square_v_polytope(side_length: float) -> VPolytope:
+    "returns a vpolytope in the frame of the center of the square"
+    L = side_length / 2.0
+
+    V = np.array([
+        [-L, -L], 
+        [L, -L], 
+        [L, L], 
+        [-L, L]
+    ]).T
+
+    return VPolytope(V)
+
+def convert_rigid_transform_to_x_y_theta(transform: RigidTransform): 
+    R = transform.rotation().matrix()
+    theta = np.arctan2(R[1, 0], R[0, 0])
+    x = transform.translation()[0]
+    y = transform.translation()[1]
+
+    rotation_matrix = np.array([
+        [np.cos(theta), -np.sin(theta)],
+        [np.sin(theta), np.cos(theta)]
+    ])
+    return x, y, theta, rotation_matrix, np.array([[x], [y]])
 
 class CameraSystem(LeafSystem):
     def __init__(self): 

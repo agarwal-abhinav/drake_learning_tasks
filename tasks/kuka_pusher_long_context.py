@@ -11,6 +11,8 @@ import shutil
 import yaml
 from hydra.core.hydra_config import HydraConfig
 import random
+from tqdm import tqdm 
+from collections import deque
 
 from .base_task import BaseTask
 from utils.iiwa_planner import IiwaPlanner
@@ -41,10 +43,17 @@ from pydrake.all import (
     RobotDiagram,
     Simulator,
     WeldJoint, 
-    InputPortIndex
+    InputPortIndex, 
+    HPolyhedron, 
+    VPolytope, 
+    RotationMatrix, 
+    RandomGenerator
 )
 
-from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting
+from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting, convert_rigid_transform_to_x_y_theta
+from utils.trajectory_utils import is_stationary_and_close_2D, clip_start_end_idle
+from utils.drake_utils import create_square_v_polytope
+
 
 from manipulation.station import MakeHardwareStation
 from manipulation.station import (
@@ -590,7 +599,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 self.controller.GetMyMutableContextFromRoot(self.simulator.get_mutable_context()), 
                 InputPortIndex(1)
             )
-
+        
         simulator = self.simulator
         plant = self.plant
         scene_graph = self.scene_graph
@@ -599,19 +608,133 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         plant_context = plant.GetMyMutableContextFromRoot(context)
         scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
 
-        if self.debug: 
-            diff_to_diff_ik = self.diff_to_diff_ik
-            diff_to_diff_ik_context = diff_to_diff_ik.GetMyMutableContextFromRoot(context)
-            controller = self.controller
-            controller_context = controller.GetMyMutableContextFromRoot(context)
+        if self.cfg.slider_is_square: 
+            goal_box_v_poly = create_square_v_polytope(
+                side_length=self.cfg.goal_side_length
+            )
+            slider_v_poly = create_square_v_polytope(
+                side_length=self.cfg.slider_side_length
+            )
+            slider_base_volume = self.cfg.slider_side_length ** 2
 
-            zo_hold = self.zo_hold
-            zo_hold_context = zo_hold.GetMyMutableContextFromRoot(context)
+            goal_hpoly_list = []
+            for bin_name, bin_properties in self.cfg.bins.items():
+                if bin_name not in self.controller.cfg.modes_to_eval: 
+                    continue
+                goal_frame = self.plant.GetFrameByName("box_center", self.plant.GetModelInstanceByName(f"start_goal_{bin_name}"))
+                goal_frame_in_iiwa0 = goal_frame.CalcPose(
+                    plant_context, self.iiwa_frame
+                )
+                _, _, _, rot_mat, transl = convert_rigid_transform_to_x_y_theta(goal_frame_in_iiwa0)
+                goal_box_v_poly_rotated_translated = rot_mat @ goal_box_v_poly.vertices() + transl
+                goal_box_h_poly = HPolyhedron(VPolytope(goal_box_v_poly_rotated_translated))
+                goal_hpoly_list.append((bin_name, goal_box_h_poly, goal_box_v_poly_rotated_translated))
+
+            center_goal_frame = self.plant.GetFrameByName("box_center", self.plant.GetModelInstanceByName("shadow_box_center"))
+            center_goal_frame_in_iiwa0 = center_goal_frame.CalcPose(
+                plant_context, self.iiwa_frame
+            )
+            _, _, _, rot_mat, transl = convert_rigid_transform_to_x_y_theta(center_goal_frame_in_iiwa0)
+            center_goal_box_v_poly_rotated_translated = rot_mat @ goal_box_v_poly.vertices() + transl
+            center_goal_h_poly = HPolyhedron(VPolytope(center_goal_box_v_poly_rotated_translated))
+        else: 
+            raise NotImplementedError("Only square sliders supported for eval currently.")
+        
+        goal_cylinder_pos_list = []
+        for bin_name, bin_properties in self.cfg.bins.items(): 
+            if bin_name not in self.controller.cfg.modes_to_eval: 
+                continue
+            goal_cylinder_frame = self.plant.GetFrameByName("cylinder", self.plant.GetModelInstanceByName(f"pusher_goal_for_{bin_name}"))
+            goal_cylinder_frame_in_iiwa0 = goal_cylinder_frame.CalcPose(
+                plant_context, self.iiwa_frame  
+            )
+            goal_cylinder_pos = goal_cylinder_frame_in_iiwa0.translation()[:2]
+            goal_cylinder_pos_list.append((bin_name, goal_cylinder_pos))
+
+        center_cylinder_frame = self.plant.GetFrameByName("cylinder", self.plant.GetModelInstanceByName(f"cylinder_goal"))
+        center_cylinder_frame_in_iiwa0 = center_cylinder_frame.CalcPose(
+            plant_context, self.iiwa_frame  
+        )
+        center_cylinder_pos = center_cylinder_frame_in_iiwa0.translation()[:2]
+
+        success = False 
+        reached_mid = False 
+        correct_return_to_a_box = False 
+        correct_return_mode = False 
+
+        mid_overlap_area = None 
+        final_overlap_area = None 
 
         num_steps = int(max_time / self.dt)
 
+        ee_pos_log = deque([], maxlen=10)
+
         for step in range(num_steps): 
             simulator.AdvanceTo(simulator.get_context().get_time() + self.dt)
+
+            ee_pos = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame).translation()[:2]
+            ee_pos_log.append(ee_pos)
+
+            slider_pose = self.slider_frame.CalcPose(plant_context, self.iiwa_frame)
+            _, _, _, rot_mat, transl = convert_rigid_transform_to_x_y_theta(slider_pose)
+            slider_v_poly_rotated_translated = rot_mat @ slider_v_poly.vertices() + transl
+            slider_h_poly = HPolyhedron(VPolytope(slider_v_poly_rotated_translated))
+
+            # check if reached center 
+            if not reached_mid: 
+                center_intersect = center_goal_h_poly.Intersection(slider_h_poly)
+                distance_to_center_cylinder = np.linalg.norm(ee_pos - center_cylinder_pos)
+
+                if not center_intersect.IsEmpty() and distance_to_center_cylinder < self.cfg.eval_center_cylinder_threshold: 
+                    intersection_volume = center_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
+                    this_mid_overlap_area = intersection_volume.volume / slider_base_volume
+                    if this_mid_overlap_area >= self.cfg.eval_mid_overlap_threshold:
+                        reached_mid = True 
+                        print("Reached center position of slider.")
+                        mid_overlap_area = this_mid_overlap_area
+            else: 
+                ee_poss = np.stack(ee_pos_log, axis=0)
+                pairwise_distances = np.linalg.norm(ee_poss[:, None, :] - ee_poss[None, :, :], axis=-1)
+                
+                if np.all(pairwise_distances < 1e-4):
+                    goal_box_index = -1
+                    for bin_name, goal_box_h_poly, _ in goal_hpoly_list: 
+                        goal_intersect = goal_box_h_poly.Intersection(slider_h_poly)
+                        if not goal_intersect.IsEmpty(): 
+                            goal_box_index = bin_name
+                            break
+
+                    distance_to_goal_cylinder = np.inf
+                    goal_cylinder_index = -1
+                    for bin_name, goal_cylinder_pos in goal_cylinder_pos_list:
+                        this_distance = np.linalg.norm(ee_pos - goal_cylinder_pos)
+                        if this_distance < distance_to_goal_cylinder:
+                            distance_to_goal_cylinder = this_distance
+                            goal_cylinder_index = bin_name
+
+                    if not goal_intersect.IsEmpty() and distance_to_goal_cylinder < self.cfg.eval_goal_cylinder_threshold: 
+                        intersection_volume = goal_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
+                        this_final_overlap_area = intersection_volume.volume / slider_base_volume
+                        if this_final_overlap_area >= self.cfg.eval_final_overlap_threshold:
+                            correct_return_to_a_box = True 
+                            print("Correctly returned slider to goal box.")
+                            final_overlap_area = this_final_overlap_area
+                            break
+        
+        if reached_mid and correct_return_to_a_box: 
+            if goal_box_index == self.cfg.initial_location_type and goal_box_index == goal_cylinder_index: 
+                success = True
+                correct_return_mode = True
+        else: 
+            if goal_box_index == self.cfg.initial_location_type and goal_box_index == goal_cylinder_index:
+                correct_return_mode = True
+
+        print("Middle overlap area:", mid_overlap_area)
+        print("Final overlap area:", final_overlap_area)
+        print("Success:", success)
+        print("Correct return mode:", correct_return_mode)
+
+        return mid_overlap_area, final_overlap_area, success, correct_return_mode, correct_return_to_a_box
 
     def plot_state_log(self, log):
         t = log.sample_times()
@@ -701,17 +824,43 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             seeds = list(range(self.controller.cfg.eval_min_seed, self.controller.cfg.eval_max_seed))
         else: 
             seeds = [42]
-        
+    
         m = 0
-        while True: 
-            if m < len(seeds): 
-                seed = seeds[m]
-                m += 1 
-            else: 
-                seed = random.randint(0, 10000)
+        total_success = 0 
+        total_correct_return_mode = 0 
+        total_correct_return_to_a_box = 0 
+        total_mid_area = 0 
+        total_final_area = 0 
+        num_mid_area = 0 
+        num_final_area = 0
+        while m < len(seeds): 
+            seed = seeds[m]
+            m += 1 
             print(f"Starting new eval with seed {seed}...\n")
             self.reset_robot(seed)
-            self.diffusion_rollout(self.controller.cfg.eval_max_time)
+            mid_area, final_area, success, correct_return_mode, correct_return_to_a_box = self.diffusion_rollout(self.controller.cfg.eval_max_time)
+
+            if mid_area is not None: 
+                total_mid_area += mid_area
+                num_mid_area += 1
+            if final_area is not None: 
+                total_final_area += final_area
+                num_final_area += 1
+            if success: 
+                total_success += 1
+            if correct_return_mode: 
+                total_correct_return_mode += 1
+            if correct_return_to_a_box: 
+                total_correct_return_to_a_box += 1
+
+        print("\n================ Evaluation Summary ================\n")
+        print("Evaluation for: ", self.cfg.initial_location_type)
+        print(f"Average mid overlap area: {total_mid_area/num_mid_area if num_mid_area > 0 else 0}")
+        print(f"Average final overlap area: {total_final_area/num_final_area if num_final_area > 0 else 0}")
+        print(f"Total success count: {total_success} out of {len(seeds)}")
+        print(f"Correct return mode count: {total_correct_return_mode} out of {len(seeds)}")
+        print(f"Correct return to a box count: {total_correct_return_to_a_box} out of {len(seeds)}")
+        print("\n====================================================\n")
 
     def run_teleop(self):
         logging.getLogger(
@@ -744,7 +893,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
     def check_saved_trajectory_images(self): 
         import cv2 
-        from tqdm import tqdm 
 
         if self.cfg.initial_location_type is not None: 
             subdir = f"start_bin_{self.cfg.initial_location_type}"
@@ -769,7 +917,129 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                         break   
         cv2.destroyAllWindows()
         breakpoint()
+        
+    def _print_data_overlap_statistics(self): 
 
+        if self.cfg.initial_location_type is not None: 
+            subdir = f"start_bin_{self.cfg.initial_location_type}"
+        else: 
+            subdir = "general"
 
+        data_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
 
+        traj_dir_list = [
+            name for name in os.listdir(data_path) if os.path.isdir(os.path.join(data_path, name))
+        ]    
 
+        if self.cfg.slider_is_square: 
+            slider_v_poly = create_square_v_polytope(
+                side_length=self.cfg.slider_side_length
+            )
+            goal_box_v_poly = create_square_v_polytope(
+                side_length=self.cfg.goal_side_length
+            )
+
+            goal_frame = self.plant.GetFrameByName("box_center", self.plant.GetModelInstanceByName(f"start_goal_{self.cfg.initial_location_type}"))
+            goal_frame_in_iiwa0 = goal_frame.CalcPose(
+                self.plant.CreateDefaultContext(), self.iiwa_frame
+            )
+            R_goal = goal_frame_in_iiwa0.rotation().matrix()
+            theta_goal = np.arctan2(R_goal[1,0], R_goal[0,0])
+            x_goal = goal_frame_in_iiwa0.translation()[0]
+            y_goal = goal_frame_in_iiwa0.translation()[1]
+
+            rotation_matrix = np.array([
+                [np.cos(theta_goal), -np.sin(theta_goal)],
+                [np.sin(theta_goal), np.cos(theta_goal)]
+            ])
+            goal_box_v_poly_rotated_translated = rotation_matrix @ goal_box_v_poly.vertices() + np.array([[x_goal], [y_goal]])
+            goal_h_poly = HPolyhedron(VPolytope(goal_box_v_poly_rotated_translated))
+
+            slider_base_volume = self.cfg.slider_side_length **2
+
+            center_goal_frame = self.plant.GetFrameByName("box_center", self.plant.GetModelInstanceByName("shadow_box_center"))
+            center_goal_frame_in_iiwa0 = center_goal_frame.CalcPose(
+                self.plant.CreateDefaultContext(), self.iiwa_frame
+            )
+            R_center_goal = center_goal_frame_in_iiwa0.rotation().matrix()
+            theta_center_goal = np.arctan2(R_center_goal[1,0], R_center_goal[0,0])
+            x_center_goal = center_goal_frame_in_iiwa0.translation()[0]
+            y_center_goal = center_goal_frame_in_iiwa0.translation()[1]
+            rotation_matrix_center = np.array([
+                [np.cos(theta_center_goal), -np.sin(theta_center_goal)],
+                [np.sin(theta_center_goal), np.cos(theta_center_goal)]
+            ])
+            center_goal_box_v_poly_rotated_translated = rotation_matrix_center @ goal_box_v_poly.vertices() + np.array([[x_center_goal], [y_center_goal]])
+            center_goal_h_poly = HPolyhedron(VPolytope(center_goal_box_v_poly_rotated_translated))
+
+        else: 
+            raise NotImplementedError("Only square sliders supported for overlap statistics currently.")
+        
+        center_cylinder_frame = self.plant.GetFrameByName("cylinder", self.plant.GetModelInstanceByName("cylinder_goal"))
+        center_cylinder_frame_in_iiwa0 = center_cylinder_frame.CalcPose(
+            self.plant.CreateDefaultContext(), self.iiwa_frame
+        )
+        center_cylinder_pos = center_cylinder_frame_in_iiwa0.translation()[:2]
+
+        average_overlap = 0.0
+        average_overlap_at_center = 0.0
+
+        for traj_dir in tqdm(traj_dir_list):
+            loaded_pos = np.load(os.path.join(data_path, traj_dir, "slider_pos.npy"))
+            loaded_quat = np.load(os.path.join(data_path, traj_dir, "slider_quat_wxyz.npy"))
+
+            last_frame_pos = loaded_pos[-1]
+            last_frame_quat = loaded_quat[-1]
+
+            R = RotationMatrix(Quaternion(last_frame_quat.T))
+            theta = np.arctan2(R.matrix()[1,0], R.matrix()[0,0])
+            x = last_frame_pos[0, 0]
+            y = last_frame_pos[0, 1]
+
+            rotation_matrix = np.array([
+                [np.cos(theta), -np.sin(theta)],
+                [np.sin(theta), np.cos(theta)]
+            ])
+            slider_box_v_poly_rotated_translated = rotation_matrix @ slider_v_poly.vertices() + np.array([[x], [y]])
+            slider_h_poly = HPolyhedron(VPolytope(slider_box_v_poly_rotated_translated))
+
+            intersection: HPolyhedron = goal_h_poly.Intersection(slider_h_poly)
+            intersection_volume = intersection.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000).volume
+
+            average_overlap += intersection_volume / slider_base_volume
+
+            # loaded_pos_pusher = np.load(os.path.join(data_path, traj_dir, "pusher_pos.npy"))[..., :2]
+            # loaded_pos_pusher = np.squeeze(loaded_pos_pusher, axis=1)
+            # first_idx, last_idx = clip_start_end_idle(
+            #     loaded_pos_pusher, 
+            #     1e-9, 
+            #     keep_idle=0
+            # )
+            # loaded_pos_pusher = loaded_pos_pusher[first_idx:last_idx]
+            # # breakpoint()
+
+            # center_index = is_stationary_and_close_2D(
+            #     loaded_pos_pusher, center_cylinder_pos
+            # )
+            # assert center_index is not -1, "Did not find stationary position near goal cylinder!"
+            # center_slider_pos = loaded_pos[center_index]
+            # center_slider_quat = loaded_quat[center_index]
+            # R = RotationMatrix(Quaternion(center_slider_quat.T))
+            # theta = np.arctan2(R.matrix()[1,0], R.matrix()[0,0])
+            # x = center_slider_pos[0, 0]
+            # y = center_slider_pos[0, 1]
+
+            # rotation_matrix = np.array([
+            #     [np.cos(theta), -np.sin(theta)],
+            #     [np.sin(theta), np.cos(theta)]
+            # ])
+            # slider_center_v_poly_rotated_translated = rotation_matrix @ slider_v_poly.vertices() + np.array([[x], [y]])
+            # slider_center_h_poly = HPolyhedron(VPolytope(slider_center_v_poly_rotated_translated))
+            # intersection_at_center: HPolyhedron = center_goal_h_poly.Intersection(slider_center_h_poly)
+            # intersection_volume_at_center = intersection_at_center.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000).volume
+            # average_overlap_at_center += intersection_volume_at_center / slider_base_volume
+
+        average_overlap /= len(traj_dir_list)
+        # average_overlap_at_center /= len(traj_dir_list)
+        print(f"Average overlap with goal region over {len(traj_dir_list)} trajectories: {average_overlap*100:.2f}%")
+        # print(f"Average overlap at center over {len(traj_dir_list)} trajectories: {average_overlap_at_center*100:.2f}%")

@@ -17,6 +17,8 @@ import copy
 import zarr
 import yaml 
 
+from utils.trajectory_utils import clip_start_end_idle
+
 def calculate_traj_dir_list(data_paths: Dict[str, int]) -> List[str]: 
     traj_dir_list = []
     for data_path in data_paths.keys(): 
@@ -29,29 +31,6 @@ def calculate_traj_dir_list(data_paths: Dict[str, int]) -> List[str]:
                 break
     
     return traj_dir_list 
-
-def clip_start_end_idle(traj, eps=1e-5, keep_idle=2): 
-    diffs = np.linalg.norm(np.diff(traj, axis=0), axis=1)
-
-    moving = diffs > eps 
-
-    if not moving.any(): 
-        print("Warning: trajectory has no movement.")
-        return traj[:min(keep_idle, len(traj))]
-    
-    moving_idx = np.flatnonzero(moving)
-
-    first_move_diff_idx = moving_idx[0]
-    last_move_diff_idx = moving_idx[-1]
-
-    if first_move_diff_idx - keep_idle < 0: 
-        first_move_sampling = 0
-    else: 
-        first_move_sampling = first_move_diff_idx - keep_idle
-
-    last_move_sampling = last_move_diff_idx + 1 + keep_idle
-
-    return first_move_sampling, last_move_sampling
 
 @hydra.main(
     version_base=None, 
