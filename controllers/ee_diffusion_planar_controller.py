@@ -101,13 +101,15 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         if len(self._actions) == 0: 
             obs_dict = self._deque_to_dict()
             with torch.no_grad(): 
-                predicted_actions = self.policy.predict_action(
+                predicted_actions_base = self.policy.predict_action(
                     obs_dict, 
                     use_DDIM=self.use_DDIM
-                )['action_pred'][0].cpu().numpy()
+                )['action_pred'].cpu().numpy()
+            
+            predicted_actions = predicted_actions_base[0]
 
-            if self.debug: 
-                self._visualize_trajectory(predicted_actions)
+            if self.cfg.visualize_actions: 
+                self._visualize_trajectory(predicted_actions_base)
             
             self._actions.extend(predicted_actions[self.n_obs_steps-1:self.n_obs_steps-1 + self.n_action_steps])
 
@@ -121,19 +123,20 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         self.meshcat.Delete("predicted_trajectory")
 
         # Draw each action as a sphere
-        for i, action in enumerate(trajectory):
-            # Green for executed actions (first n_action_steps), yellow for others
-            if i < self.n_obs_steps -1 + self.n_action_steps and i >= self.n_obs_steps-1:
-                color = Rgba(0.0, 1.0, 0.0, 0.8)  # Green
-            else:
-                color = Rgba(1.0, 1.0, 0.0, 0.8)  # Yellow
+        for j, traj in enumerate(trajectory):
+            for i, action in enumerate(traj):
+                # Green for executed actions (first n_action_steps), yellow for others
+                if i < self.n_obs_steps -1 + self.n_action_steps and i >= self.n_obs_steps-1:
+                    color = Rgba(0.0, 1.0, 0.0, 0.8)  # Green
+                else:
+                    color = Rgba(1.0, 1.0, 0.0, 0.8)  # Yellow
 
-            sphere_path = f"predicted_trajectory/point_{i}"
-            self.meshcat.SetObject(sphere_path, Sphere(0.005), color)
-            # Position at (x, y, z=0.0) - assuming planar pushing
-            self.meshcat.SetTransform(sphere_path, RigidTransform([action[0]+self.translation_offset[0], 
-                                                                   action[1]+self.translation_offset[1], 
-                                                                   0.0]))
+                sphere_path = f"predicted_trajectory/point_{j}_{i}"
+                self.meshcat.SetObject(sphere_path, Sphere(0.005), color)
+                # Position at (x, y, z=0.0) - assuming planar pushing
+                self.meshcat.SetTransform(sphere_path, RigidTransform([action[0]+self.translation_offset[0], 
+                                                                    action[1]+self.translation_offset[1], 
+                                                                    0.0]))
 
     def _update_deques(self, context: Context): 
         camera_images = {}
@@ -178,12 +181,12 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                     self.obs_shapes[name].shape[2]
                 ).to(self._device)
 
-                data['obs'][name] = this_processed_buffer
+                data['obs'][name] = this_processed_buffer.repeat(self.cfg.num_samples, 1, 1, 1, 1)
 
             else: 
                 data['obs'][name] = torch.from_numpy(np.stack(
                     self._dict_of_obs_buffers[name]
-                )).unsqueeze(0).to(self._device)
+                )).unsqueeze(0).to(self._device).repeat(self.cfg.num_samples, 1, 1)
         
         return data 
     

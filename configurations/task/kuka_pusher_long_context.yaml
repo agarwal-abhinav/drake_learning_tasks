@@ -196,8 +196,9 @@ slider_is_square: true
 slider_side_length: 0.07
 goal_side_length: 0.08
 
-eval_center_cylinder_threshold: 5e-3
-eval_mid_overlap_threshold: 0.8
-
+eval_center_cylinder_threshold: 9e-3
 eval_goal_cylinder_threshold: 9e-3 
-eval_final_overlap_threshold: 0.8
+
+slider_mid_overlap_threshold: 0.8
+mild_overlap_volume_threshold: 0.95
+strong_overlap_volume_threshold: 0.9

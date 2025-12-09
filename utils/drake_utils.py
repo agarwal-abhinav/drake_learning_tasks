@@ -8,7 +8,11 @@ from pydrake.all import (
     Image, 
     PixelType, 
     HPolyhedron, 
-    VPolytope
+    VPolytope, 
+    InverseKinematics, 
+    MultibodyPlant, 
+    Context, 
+    Solve
 )
 import matplotlib.pyplot as plt
 
@@ -83,3 +87,33 @@ class CameraSystem(LeafSystem):
         self.im.set_data(rgb_image)
         plt.draw()
         plt.pause(0.01)
+
+def iiwa_ik_function(pose: RigidTransform, 
+                     plant: MultibodyPlant, 
+                     plant_context: Context, 
+                     q0): 
+    ik = InverseKinematics(plant, plant_context)
+    ik.AddPositionConstraint(
+        plant.GetFrameByName("iiwa_link_7"),
+        [0, 0, 0], 
+        plant.world_frame(), 
+        pose.translation(), 
+        pose.translation()
+    )
+    ik.AddOrientationConstraint(
+        plant.GetFrameByName("iiwa_link_7"),
+        RigidTransform().rotation(),
+        plant.world_frame(),
+        pose.rotation(),
+        0.01
+    )
+    prog = ik.get_mutable_prog()
+    q = ik.q() 
+    prog.AddQuadraticErrorCost(np.identity(len(q)), q0, q)
+    prog.SetInitialGuess(q, q0) 
+
+    result = Solve(ik.prog())
+
+    assert result.is_success(), "IK did not succeed"
+    q_sol = result.GetSolution(q)
+    return q_sol

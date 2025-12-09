@@ -13,6 +13,8 @@ from hydra.core.hydra_config import HydraConfig
 import random
 from tqdm import tqdm 
 from collections import deque
+import sys
+import pickle 
 
 from .base_task import BaseTask
 from utils.iiwa_planner import IiwaPlanner
@@ -52,7 +54,7 @@ from pydrake.all import (
 
 from utils.drake_utils import xyz_rpy_deg, change_camera_to_point_lighting, convert_rigid_transform_to_x_y_theta
 from utils.trajectory_utils import is_stationary_and_close_2D, clip_start_end_idle
-from utils.drake_utils import create_square_v_polytope
+from utils.drake_utils import create_square_v_polytope, iiwa_ik_function
 
 
 from manipulation.station import MakeHardwareStation
@@ -60,7 +62,9 @@ from manipulation.station import (
     LoadScenario,
     ConfigureParser,
 )
-from manipulation.scenarios import AddIiwaDifferentialIK, AddMultibodyTriad
+from manipulation.scenarios import AddIiwaDifferentialIK, AddMultibodyTriad, AddIiwa
+
+import time 
 
 class Mode(Enum):
     REGULAR = 'regular'
@@ -588,8 +592,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         print("\n")
         return trajectory
     
-    def diffusion_rollout(self, max_time: float = 20.0): 
+    def diffusion_rollout(self, max_time: float = 20.0, save_path = None, save_html: bool = False): 
         self.controller: PlanarDiffusionPolicyDrakeController
+        if save_html == True or self.controller.cfg.save_trajectory == True: 
+            assert save_path is not None, "Must provide save path if saving html or trajectory."
+
         self.controller.reset(
             self.meshcat
         )
@@ -599,14 +606,23 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 self.controller.GetMyMutableContextFromRoot(self.simulator.get_mutable_context()), 
                 InputPortIndex(1)
             )
+
+        if save_html: 
+            self.meshcat.StartRecording()
+
+        if self.controller.cfg.save_trajectory: 
+            trajectory = {
+                "time": [],
+                "pusher_pos": [],
+                "slider_pos": [],
+                "slider_quat_wxyz": [],
+            }
         
         simulator = self.simulator
         plant = self.plant
-        scene_graph = self.scene_graph
 
         context = simulator.get_mutable_context()
         plant_context = plant.GetMyMutableContextFromRoot(context)
-        scene_graph_context = scene_graph.GetMyMutableContextFromRoot(context)
 
         if self.cfg.slider_is_square: 
             goal_box_v_poly = create_square_v_polytope(
@@ -656,11 +672,12 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             plant_context, self.iiwa_frame  
         )
         center_cylinder_pos = center_cylinder_frame_in_iiwa0.translation()[:2]
-
-        success = False 
+    
         reached_mid = False 
-        correct_return_to_a_box = False 
-        correct_return_mode = False 
+        mild_return_to_a_box = False # returned to a box > 95% at rest, but not pusher 
+        return_to_a_box = False # returned to a box > 80% and pusher slider both at rest 
+        mild_success = False # returned to correct box > 95% at rest, but not pusher 
+        success = False # returned to correct box > 80%, and pusher slider both at rest 
 
         mid_overlap_area = None 
         final_overlap_area = None 
@@ -668,6 +685,11 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         num_steps = int(max_time / self.dt)
 
         ee_pos_log = deque([], maxlen=10)
+        slider_pos_log = deque([], maxlen=5)
+
+        index_of_mid = None 
+        index_of_mild_return = None 
+        index_of_strong_return = None 
 
         for step in range(num_steps): 
             simulator.AdvanceTo(simulator.get_context().get_time() + self.dt)
@@ -680,61 +702,152 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             slider_v_poly_rotated_translated = rot_mat @ slider_v_poly.vertices() + transl
             slider_h_poly = HPolyhedron(VPolytope(slider_v_poly_rotated_translated))
 
+            if self.controller.cfg.save_trajectory:
+                trajectory["time"].append(simulator.get_context().get_time())
+                trajectory["pusher_pos"].append(ee_pos)
+                trajectory["slider_pos"].append(transl)
+                trajectory["slider_quat_wxyz"].append(slider_pose.rotation().ToQuaternion().wxyz())
+
+            slider_pos_log.append(transl)
+
             # check if reached center 
             if not reached_mid: 
                 center_intersect = center_goal_h_poly.Intersection(slider_h_poly)
+
+                ee_poss = np.stack(ee_pos_log, axis=0)
+                pairwise_distances = np.linalg.norm(ee_poss[:, None, :] - ee_poss[None, :, :], axis=-1)
+
                 distance_to_center_cylinder = np.linalg.norm(ee_pos - center_cylinder_pos)
 
-                if not center_intersect.IsEmpty() and distance_to_center_cylinder < self.cfg.eval_center_cylinder_threshold: 
+                if not center_intersect.IsEmpty() and np.all(pairwise_distances) < 1e-4 and distance_to_center_cylinder < self.cfg.eval_center_cylinder_threshold: 
                     intersection_volume = center_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
                     this_mid_overlap_area = intersection_volume.volume / slider_base_volume
-                    if this_mid_overlap_area >= self.cfg.eval_mid_overlap_threshold:
+                    if this_mid_overlap_area >= self.cfg.slider_mid_overlap_threshold:
                         reached_mid = True 
                         print("Reached center position of slider.")
                         mid_overlap_area = this_mid_overlap_area
+                        index_of_mid = step
             else: 
                 ee_poss = np.stack(ee_pos_log, axis=0)
                 pairwise_distances = np.linalg.norm(ee_poss[:, None, :] - ee_poss[None, :, :], axis=-1)
-                
-                if np.all(pairwise_distances < 1e-4):
-                    goal_box_index = -1
+
+                slider_poss = np.stack(slider_pos_log, axis=0)
+                slider_pairwise_distances = np.linalg.norm(slider_poss[:, None, :] - slider_poss[None, :, :], axis=-1)
+
+                if np.all(slider_pairwise_distances < 1e-4) and not mild_return_to_a_box: 
+                    # slider at rest 
+                    # check if it intersects with any of the goal boxes 
+                    if self.debug: 
+                        print(f"Slider at rest, checking for mild return to a box...{step}")
+                        import time 
+                        start = time.time()
+                    
                     for bin_name, goal_box_h_poly, _ in goal_hpoly_list: 
                         goal_intersect = goal_box_h_poly.Intersection(slider_h_poly)
                         if not goal_intersect.IsEmpty(): 
-                            goal_box_index = bin_name
+                            overlap_volume = goal_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
+                            if (overlap_volume.volume / slider_base_volume) >= self.cfg.mild_overlap_volume_threshold: 
+                                mild_return_to_a_box = True 
+                                print("Mildly returned slider to a box.")
+                                index_of_mild_return = step
+                                if bin_name == self.cfg.initial_location_type: 
+                                    mild_success = True 
+                                    print("Mildly successfully returned slider to goal box.")
                             break
+                    
+                    if self.debug:
+                        end = time.time()
+                        print(f"Time taken for mild return to a box check: {end - start:.4f} seconds")
 
+                if np.all(pairwise_distances < 1e-4) and mild_return_to_a_box:
+                    # pusher at rest 
+
+                    # check if slider is inside a bin 
+                    if self.debug: 
+                        print(f"RUNNING THIS CHECK {step}")
+                        import time 
+                        start = time.time()
+                    
+                    goal_box_index = -1 
+                    for bin_name, goal_box_h_poly, _ in goal_hpoly_list: 
+                        goal_intersect = goal_box_h_poly.Intersection(slider_h_poly)
+                        if not goal_intersect.IsEmpty(): 
+                            overlap_volume = goal_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
+                            if (overlap_volume.volume / slider_base_volume) >= self.cfg.strong_overlap_volume_threshold: 
+                                goal_box_index = bin_name 
+                                break
+                    if self.debug: 
+                        end = time.time()
+                        print(f"Time taken for final box check: {end - start:.4f} seconds")
+                    
+                    # check if pusher is at rest at return location 
                     distance_to_goal_cylinder = np.inf
                     goal_cylinder_index = -1
+                    if self.debug: 
+                        import time 
+                        start = time.time()
                     for bin_name, goal_cylinder_pos in goal_cylinder_pos_list:
                         this_distance = np.linalg.norm(ee_pos - goal_cylinder_pos)
                         if this_distance < distance_to_goal_cylinder:
                             distance_to_goal_cylinder = this_distance
-                            goal_cylinder_index = bin_name
+                            if distance_to_goal_cylinder < self.cfg.eval_goal_cylinder_threshold:
+                                goal_cylinder_index = bin_name
+                                break
+                    if self.debug: 
+                        end = time.time()
+                        print(f"Time taken for final cylinder check: {end - start:.4f} seconds")
 
-                    if not goal_intersect.IsEmpty() and distance_to_goal_cylinder < self.cfg.eval_goal_cylinder_threshold: 
-                        intersection_volume = goal_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
-                        this_final_overlap_area = intersection_volume.volume / slider_base_volume
-                        if this_final_overlap_area >= self.cfg.eval_final_overlap_threshold:
-                            correct_return_to_a_box = True 
-                            print("Correctly returned slider to goal box.")
-                            final_overlap_area = this_final_overlap_area
-                            break
-        
-        if reached_mid and correct_return_to_a_box: 
-            if goal_box_index == self.cfg.initial_location_type and goal_box_index == goal_cylinder_index: 
-                success = True
-                correct_return_mode = True
-        else: 
-            if goal_box_index == self.cfg.initial_location_type and goal_box_index == goal_cylinder_index:
-                correct_return_mode = True
+                    if goal_box_index != -1 and goal_cylinder_index != -1:
+                        return_to_a_box = True 
+                        final_overlap_area = overlap_volume.volume / slider_base_volume 
+                        print("Returned slider to a box.")
+                        index_of_strong_return = step
+                    
+                        if goal_box_index == self.cfg.initial_location_type: 
+                            success = True 
+                            print("Successfully returned slider to goal box.")
+                        
+                        break               
 
         print("Middle overlap area:", mid_overlap_area)
         print("Final overlap area:", final_overlap_area)
         print("Success:", success)
-        print("Correct return mode:", correct_return_mode)
+        print("Mild Success:", mild_success)
+        print("Returned to a box:", return_to_a_box)
+        print("Mild return to a box:", mild_return_to_a_box)
 
-        return mid_overlap_area, final_overlap_area, success, correct_return_mode, correct_return_to_a_box
+        if save_html: 
+            self.meshcat.StopRecording()
+            self.meshcat.PublishRecording()
+            html = self.meshcat.StaticHtml() 
+            with open(os.path.join(save_path, "rollout.html"), "w") as f: 
+                f.write(html)
+            self.meshcat.DeleteRecording()
+            import time 
+            time.sleep(1)
+
+        if self.controller.cfg.save_trajectory:
+            for key in trajectory.keys(): 
+                this_save_path = f'{save_path}/{key}.npy'
+                assert len(trajectory[key]) > 0, "No data collected for this trajectory key!"
+                np.save(this_save_path, np.array(trajectory[key]))
+            
+            dict_of_metadata = {
+                "mid_overlap_area": mid_overlap_area,
+                "final_overlap_area": final_overlap_area,
+                "success": success,
+                "mild_success": mild_success,
+                "return_to_a_box": return_to_a_box,
+                "mild_return_to_a_box": mild_return_to_a_box,
+                "index_of_mid": index_of_mid,
+                "index_of_mild_return": index_of_mild_return,
+                "index_of_strong_return": index_of_strong_return,
+            }
+
+            with open(f'{save_path}/metadata.pkl', 'wb') as f:
+                pickle.dump(dict_of_metadata, f)
+
+        return (mid_overlap_area, final_overlap_area), (success, mild_success), (return_to_a_box, mild_return_to_a_box)
 
     def plot_state_log(self, log):
         t = log.sample_times()
@@ -818,49 +931,92 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             "utils/iiwa_planner"
         ).setLevel(logging.DEBUG)
 
+        from utils.logging_utils import IterTee
+
         assert self.controller is not None, "Evaluation controller algorithm not set for the task."
 
         if self.controller.cfg.eval_min_seed is not None: 
             seeds = list(range(self.controller.cfg.eval_min_seed, self.controller.cfg.eval_max_seed))
         else: 
             seeds = [42]
-    
+
+        output_dir = HydraConfig.get().runtime.output_dir 
+        global_log_path = os.path.join(output_dir, "eval_log.txt")
+        
+        # Open global log. If it exists, open for append and write a start marker;
+        # otherwise create it and write a creation marker.
+        if os.path.exists(global_log_path):
+            global_log = open(global_log_path, "a")
+            global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
+        else:
+            global_log = open(global_log_path, "w")
+            global_log.write(f"=== Eval log created: {time.asctime()} ===\n")
+        global_log.flush()
+
+        tee = IterTee(sys.stdout, global_log)
+        sys.stdout = tee 
+
         m = 0
         total_success = 0 
-        total_correct_return_mode = 0 
-        total_correct_return_to_a_box = 0 
+        total_mild_success = 0 
+        total_return_to_box = 0 
+        total_mild_return_to_box = 0 
+
         total_mid_area = 0 
         total_final_area = 0 
         num_mid_area = 0 
         num_final_area = 0
         while m < len(seeds): 
+            # create the logging for this particular loop 
+            os.mkdir(os.path.join(output_dir, f"eval_seed_{seeds[m]}"))
+            iter_log_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}", "eval_log.txt")
+            iter_log = open(iter_log_path, "w")
+            tee.set_iter_file(iter_log)
+
             seed = seeds[m]
+            if m < self.controller.cfg.save_html_first: 
+                save_html = True 
+            else: 
+                save_html = False
             m += 1 
             print(f"Starting new eval with seed {seed}...\n")
             self.reset_robot(seed)
-            mid_area, final_area, success, correct_return_mode, correct_return_to_a_box = self.diffusion_rollout(self.controller.cfg.eval_max_time)
+            areas, successes, correct_returns = self.diffusion_rollout(self.controller.cfg.eval_max_time, 
+                                                                       save_path=os.path.join(output_dir, f"eval_seed_{seed}"), 
+                                                                       save_html=save_html)
 
-            if mid_area is not None: 
-                total_mid_area += mid_area
-                num_mid_area += 1
-            if final_area is not None: 
-                total_final_area += final_area
+            if areas[0] is not None: 
+                total_mid_area += areas[0] 
+                num_mid_area += 1 
+            
+            if areas[1] is not None: 
+                total_final_area += areas[1]
                 num_final_area += 1
-            if success: 
-                total_success += 1
-            if correct_return_mode: 
-                total_correct_return_mode += 1
-            if correct_return_to_a_box: 
-                total_correct_return_to_a_box += 1
+
+            if successes[0] == True: 
+                total_success += 1 
+            if successes[1] == True: 
+                total_mild_success += 1
+            
+            if correct_returns[0] == True: 
+                total_return_to_box += 1
+            if correct_returns[1] == True: 
+                total_mild_return_to_box += 1
+
+            iter_log.close()
+            tee.set_iter_file(None)
 
         print("\n================ Evaluation Summary ================\n")
-        print("Evaluation for: ", self.cfg.initial_location_type)
+        print(f"Evaluation for: {self.cfg.initial_location_type} and seed: {self.controller.cfg.eval_min_seed} to {self.controller.cfg.eval_max_seed-1}")
         print(f"Average mid overlap area: {total_mid_area/num_mid_area if num_mid_area > 0 else 0}")
         print(f"Average final overlap area: {total_final_area/num_final_area if num_final_area > 0 else 0}")
         print(f"Total success count: {total_success} out of {len(seeds)}")
-        print(f"Correct return mode count: {total_correct_return_mode} out of {len(seeds)}")
-        print(f"Correct return to a box count: {total_correct_return_to_a_box} out of {len(seeds)}")
+        print(f"Total mild success count: {total_mild_success} out of {len(seeds)}")
+        print(f"Total return to a box: {total_return_to_box} out of {len(seeds)}")
+        print(f"Total mild return to a box: {total_mild_return_to_box} out of {len(seeds)}")
         print("\n====================================================\n")
+
+        global_log.close()
 
     def run_teleop(self):
         logging.getLogger(
@@ -917,6 +1073,117 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                         break   
         cv2.destroyAllWindows()
         breakpoint()
+    
+    def _create_fake_ik_plant(self): 
+        scenario = LoadScenario(data=self.cfg.scenario_data, scenario_name="robot-only")
+        plant = MultibodyPlant(time_step=self.dt)
+
+        parser = Parser(plant)
+        ConfigureParser(parser)
+        parser.package_map().AddPackageXml("models/package.xml")
+        _ = ProcessModelDirectives(
+            directives=ModelDirectives(directives=scenario.directives),
+            parser=parser,
+        )
+        plant.Finalize()
+
+        return plant
+
+    def render_with_forced_publish(self): 
+        import time 
+        if self.cfg.initial_location_type is not None: 
+            subdir = f"start_bin_{self.cfg.initial_location_type}"
+        else: 
+            subdir = "general"
+
+        data_path = f'data/{self.cfg.data_collection_run_folder_name}/{subdir}'
+
+        traj_dir_list = [
+            name for name in os.listdir(data_path) if os.path.isdir(os.path.join(data_path, name))
+        ] 
+
+        diagram_context = self.diagram.CreateDefaultContext()
+        plant_context = self.plant.GetMyMutableContextFromRoot(diagram_context)
+        
+        ik_plant = self._create_fake_ik_plant()
+        ik_plant_context = ik_plant.CreateDefaultContext()
+
+        iiwa_model_instance = self.plant.GetModelInstanceByName("iiwa")
+
+        X_W_iiwa0 = self.iiwa_frame.CalcPose(plant_context, self.plant.world_frame())
+
+        current_iiwa_joints = np.array(
+            self.cfg.nominal_joint_positions
+        )
+        for traj_dir in tqdm(traj_dir_list): 
+            loaded_pos = np.load(os.path.join(data_path, traj_dir, "slider_pos.npy"))
+            loaded_quat = np.load(os.path.join(data_path, traj_dir, "slider_quat_wxyz.npy"))
+
+            loaded_ee_pos = np.load(os.path.join(data_path, traj_dir, "pusher_pos.npy"))
+
+            # deal with the slider 
+            for m in range(loaded_pos.shape[0]):
+                slider_pose_in_iiwa0 = RigidTransform(
+                    Quaternion(loaded_quat[m].T),
+                    loaded_pos[m].flatten()
+                )
+                slider_pose = X_W_iiwa0 @ slider_pose_in_iiwa0
+
+                # calculate the mirrored pose 
+                slider_pose_translation = slider_pose.translation().flatten()
+                slider_pose_rotation = slider_pose.rotation().matrix()
+                # new_rotation_matrix = np.eye(3)
+                # new_rotation_matrix[0, :2] = slider_pose_rotation[0, :2]
+                # new_rotation_matrix[1, :2] = -slider_pose_rotation[1, :2]
+
+                # slider_pose_rotation[1, 0] = -slider_pose_rotation[1, 0]
+                # slider_pose_rotation[1, 1] = -slider_pose_rotation[1, 1]
+
+                S = np.array([
+                    [1, 0, 0],
+                    [0, -1, 0],
+                    [0, 0, 1]
+                ])
+                slider_pose_mirrored = RigidTransform(
+                    RotationMatrix(S@slider_pose_rotation), 
+                    np.array([
+                        slider_pose_translation[0],
+                        -slider_pose_translation[1],
+                        slider_pose_translation[2]
+                    ])
+                )
+                self.plant.SetFreeBodyPose(
+                    plant_context,
+                    self.slider_body,
+                    slider_pose_mirrored
+                )
+                
+                ee_pos_in_iiwa0 = loaded_ee_pos[m].flatten()
+                ee_pos_in_world = ee_pos_in_iiwa0 + X_W_iiwa0.translation().flatten()
+                ee_pos_in_world[-1] = self.cfg.reset_translation[2]
+                ee_pos_in_world[1] = -ee_pos_in_world[1]  # mirror y coordinate
+                ee_pose_in_world = RigidTransform(
+                    Quaternion(self.cfg.reset_orientation_wxyz),
+                    ee_pos_in_world
+                )
+
+                iiwa_joints = iiwa_ik_function(
+                    ee_pose_in_world, 
+                    ik_plant, 
+                    ik_plant_context, 
+                    current_iiwa_joints
+                )
+
+                self.plant.SetPositions(
+                    plant_context, 
+                    iiwa_model_instance, 
+                    iiwa_joints.flatten()
+                )
+
+                self.diagram.ForcedPublish(diagram_context)
+                current_iiwa_joints = iiwa_joints
+
+                time.sleep(0.05)
         
     def _print_data_overlap_statistics(self): 
 
