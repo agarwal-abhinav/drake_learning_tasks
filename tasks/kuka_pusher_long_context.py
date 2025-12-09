@@ -1132,20 +1132,12 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 # calculate the mirrored pose 
                 slider_pose_translation = slider_pose.translation().flatten()
                 slider_pose_rotation = slider_pose.rotation().matrix()
-                # new_rotation_matrix = np.eye(3)
-                # new_rotation_matrix[0, :2] = slider_pose_rotation[0, :2]
-                # new_rotation_matrix[1, :2] = -slider_pose_rotation[1, :2]
 
-                # slider_pose_rotation[1, 0] = -slider_pose_rotation[1, 0]
-                # slider_pose_rotation[1, 1] = -slider_pose_rotation[1, 1]
+                slider_pose_rotation[0, 1] = -slider_pose_rotation[0, 1]
+                slider_pose_rotation[1, 0] = -slider_pose_rotation[1, 0]
 
-                S = np.array([
-                    [1, 0, 0],
-                    [0, -1, 0],
-                    [0, 0, 1]
-                ])
                 slider_pose_mirrored = RigidTransform(
-                    RotationMatrix(S@slider_pose_rotation), 
+                    RotationMatrix(slider_pose_rotation), 
                     np.array([
                         slider_pose_translation[0],
                         -slider_pose_translation[1],
