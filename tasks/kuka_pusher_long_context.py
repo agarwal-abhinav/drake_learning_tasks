@@ -131,7 +131,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
     compatible_controllers = {
         DebugEndEffectorController: lambda instance: instance._initialize_basic_non_leafsystem_controller(), 
         GamePadEndEffectorPlanarController: lambda instance: instance._initialize_basic_non_leafsystem_controller(),
-        PlanarDiffusionPolicyDrakeController: lambda instance: instance._initialize_diffusion_planar_controller()
+        PlanarDiffusionPolicyDrakeController: lambda instance: instance._initialize_diffusion_planar_controller(), 
+        # PlanarTrajectorySourceDrakeController: lambda instance: instance._initialize_trajectory_source_planar_controller()
     }
 
     def __init__(self, root_cfg: DictConfig) -> None:
@@ -1089,7 +1090,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         return plant
 
-    def render_with_forced_publish(self): 
+    def render_mirror_with_forced_publish(self): 
         import time 
         if self.cfg.initial_location_type is not None: 
             subdir = f"start_bin_{self.cfg.initial_location_type}"
@@ -1115,11 +1116,33 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         current_iiwa_joints = np.array(
             self.cfg.nominal_joint_positions
         )
+
+        if self.cfg.initial_location_type == 0: 
+            this_location_type = 4 
+        elif self.cfg.initial_location_type == 4: 
+            this_location_type = 0
+        elif self.cfg.initial_location_type == 1: 
+            this_location_type = 3
+        elif self.cfg.initial_location_type == 3: 
+            this_location_type = 1
+        else:
+            raise NotImplementedError("Only swapping between 0 and 4, or 1 and 3 supported for mirroring currently.")
+        
         for traj_dir in tqdm(traj_dir_list): 
             loaded_pos = np.load(os.path.join(data_path, traj_dir, "slider_pos.npy"))
             loaded_quat = np.load(os.path.join(data_path, traj_dir, "slider_quat_wxyz.npy"))
 
             loaded_ee_pos = np.load(os.path.join(data_path, traj_dir, "pusher_pos.npy"))
+
+            trajectory = {
+                "pusher_pos": [],
+                "slider_pos": [],
+                "slider_quat_wxyz": [],
+            }
+            for camera_name in self.scenario.cameras.keys(): 
+                trajectory[f"cam_rgb_{camera_name}"] = []
+
+            save_path = f'data/{self.cfg.data_collection_run_folder_name}/start_bin_{this_location_type}_via_mirror/{traj_dir}'
 
             # deal with the slider 
             for m in range(loaded_pos.shape[0]):
@@ -1175,8 +1198,24 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 self.diagram.ForcedPublish(diagram_context)
                 current_iiwa_joints = iiwa_joints
 
+                ee_pos = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame).translation()
+                slider_pose = self.slider_frame.CalcPose(plant_context, self.iiwa_frame)
+                trajectory["pusher_pos"].append(np.array([ee_pos]))
+                trajectory["slider_pos"].append(np.array([slider_pose.translation()]))
+                trajectory["slider_quat_wxyz"].append(np.array([slider_pose.rotation().ToQuaternion().wxyz()]))
+
+                for camera_name in self.scenario.cameras.keys():
+                    camera_rgb = copy.deepcopy(self.diagram.GetOutputPort(f"{camera_name}").Eval(diagram_context).data)
+                    trajectory[f"cam_rgb_{camera_name}"].append(camera_rgb)
+
                 time.sleep(0.05)
-        
+            # save the mirrored trajectory
+            os.makedirs(save_path, exist_ok=True)
+            for key in trajectory.keys(): 
+                this_save_path = f'{save_path}/{key}.npy'
+                assert len(trajectory[key]) > 0, "No data collected for this trajectory key!"
+                np.save(this_save_path, np.array(trajectory[key]))
+                
     def _print_data_overlap_statistics(self): 
 
         if self.cfg.initial_location_type is not None: 
