@@ -1134,6 +1134,9 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
             loaded_ee_pos = np.load(os.path.join(data_path, traj_dir, "pusher_pos.npy"))
 
+            with open(os.path.join(data_path, traj_dir, "hydra_logs/.hydra/config.yaml"), 'r') as f: 
+                run_config = yaml.safe_load(f)
+
             trajectory = {
                 "pusher_pos": [],
                 "slider_pos": [],
@@ -1143,6 +1146,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 trajectory[f"cam_rgb_{camera_name}"] = []
 
             save_path = f'data/{self.cfg.data_collection_run_folder_name}/start_bin_{this_location_type}_via_mirror/{traj_dir}'
+            
+            os.makedirs(os.path.join(save_path, "hydra_logs", ".hydra"))
+            with open(os.path.join(save_path, "hydra_logs/.hydra/config.yaml"), 'w') as f: 
+                yaml.dump(run_config, f)
 
             # deal with the slider 
             for m in range(loaded_pos.shape[0]):
@@ -1208,7 +1215,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                     camera_rgb = copy.deepcopy(self.diagram.GetOutputPort(f"{camera_name}").Eval(diagram_context).data)
                     trajectory[f"cam_rgb_{camera_name}"].append(camera_rgb)
 
-                time.sleep(0.05)
             # save the mirrored trajectory
             os.makedirs(save_path, exist_ok=True)
             for key in trajectory.keys(): 

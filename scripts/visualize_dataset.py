@@ -34,3 +34,6 @@ def main(cfg: DictConfig) -> None:
                     break   
     cv2.destroyAllWindows()
     breakpoint()
+
+if __name__ == "__main__":
+    main()

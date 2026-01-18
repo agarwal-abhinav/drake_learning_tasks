@@ -1,11 +1,16 @@
 _target_: controllers.ee_diffusion_planar_controller.PlanarDiffusionPolicyDrakeController
 
 # checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_planar_pushing_basic/new_architecture/constant_obs_steps/5_obs/checkpoints/latest.ckpt"
-checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/5_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/5_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps_0_mirror_25_each/72_obs/checkpoints/latest.ckpt"
 # checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/48_obs/checkpoints/epoch=0216-val_loss=0.0168-val_ddim_mse=0.0001.ckpt"
 
 # checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_film/5_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_film/0_via_mirror/30_obs/checkpoints/latest.ckpt"
 # checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/5_obs/checkpoints/epoch=0126-val_loss=0.0236-val_ddim_mse=0.0004.ckpt"
+
+# single mode 
+checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/single_mode/unet_cross_attention/4_original/constant_obs_steps_25_data/72_obs/checkpoints/latest.ckpt"
 
 relative_path_to_diffusion_model: "../../RLG/gcs-diffusion"
 
@@ -18,7 +23,7 @@ policy_device: "cuda"
 initial_planar_command: [0.3, 0.0, 0.175] # this is only used at start, after which reset takes over 
 
 eval_min_seed: 2000
-eval_max_seed: 2050 
+eval_max_seed: 2100 
 
 eval_max_time: 50.0
 

@@ -1,0 +1,6 @@
+data_root_dir: "data/kuka_pusher_long_context_different_returns"
+dataset: "start_bin_0"
+
+cameras: 
+  - "overhead_camera"
+  - "wrist_camera"
