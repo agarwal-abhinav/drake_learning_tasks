@@ -33,7 +33,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
         def eval_single_checkpoint(checkpoint_path: str, 
                                    output_dir: str,
                                    seeds: list[int],
-                                   process_id: int) -> None:
+                                   process_id: int, 
+                                   out_q) -> None:
             
             os.makedirs(output_dir, exist_ok=True)
             print(f"\n\nStarting evaluation for checkpoint: {checkpoint_path}\n using process id: {process_id}\n\n")
@@ -134,47 +135,58 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
             global_log.close()
 
-            return total_success, total_mild_success, total_return_to_box, total_mild_return_to_box
+            out_q.put((process_id, (total_success, total_mild_success, total_return_to_box, total_mild_return_to_box)))
 
         out_q = Queue() 
         active = [] 
+        proc_to_job = {}
         results = {}
+
         jobs = list(range(self.num_checkpoints))
         total = len(jobs)
         next_job = 0 
 
         while next_job < total or active: 
             while next_job < total and len(active) < self.num_processes: 
+                job_id = next_job
                 p = Process(
                     target = eval_single_checkpoint, 
                     args = (
                         self.checkpoint_list[next_job], 
                         self.checkpoint_output_dirs[next_job],
                         self.seeds,
-                        next_job
+                        job_id, 
+                        out_q
                     )
                 )
                 p.start()
                 active.append(p)
+                proc_to_job[p] = job_id
                 next_job += 1
-
-            try: 
-                while True: 
+            
+            while True: 
+                try: 
                     job_id, res = out_q.get_nowait()
-                    results[job_id] = res
-            except Empty: 
-                pass
-
-            active = [p for p in active if p.is_alive()]
+                    results[job_id] = res 
+                except Empty: 
+                    break 
+            
+            still_active = []
+            for p in active: 
+                if p.is_alive(): 
+                    still_active.append(p)
+                else: 
+                    p.join()
+                    proc_to_job.pop(p, None)
+            
+            active = still_active
 
             time.sleep(0.05)
 
-        print("HERE")
         while len(results) < total: 
             job_id, res = out_q.get()
             results[job_id] = res
 
-        print("HERE")
         max_success_job_id = -1 
         max_mild_success_job_id = -1 
         max_return_job_id = -1 
