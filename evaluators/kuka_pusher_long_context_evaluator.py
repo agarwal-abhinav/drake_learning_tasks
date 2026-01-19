@@ -78,7 +78,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 else: 
                     save_html = False 
                 
-                print(f"\n--- Starting eval for seed {seeds[m-1]}---\n")
+                print(f"\n--- Starting eval for seed {seeds[m]}---\n")
                 task.reset_robot(seeds[m])
 
                 areas, successes, correct_returns = task.diffusion_rollout(
@@ -108,6 +108,10 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 tee.set_iter_file(None)
 
                 m+=1 
+
+                del task.meshcat
+                del task 
+                del controller 
             
             print("\n================ Evaluation Summary ================\n")
             print(f"Evaluation for: {self.root_cfg.task.initial_location_type} and seed: {seeds[0]} to {seeds[-1]}")
