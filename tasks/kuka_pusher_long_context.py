@@ -135,7 +135,8 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         # PlanarTrajectorySourceDrakeController: lambda instance: instance._initialize_trajectory_source_planar_controller()
     }
 
-    def __init__(self, root_cfg: DictConfig) -> None:
+    def __init__(self, root_cfg: DictConfig, 
+                 meshcat_initialized = None) -> None:
         ## Parse config
         super().__init__(root_cfg)
 
@@ -159,7 +160,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         scenario = change_camera_to_point_lighting(scenario, main_camera_name="overhead_camera")
 
         # Meshcat
-        self.meshcat = ConfigureAndStartMeshcat(scenario)
+        if meshcat_initialized is None: 
+            self.meshcat = ConfigureAndStartMeshcat(scenario)
+        else:
+            self.meshcat = meshcat_initialized
         # self.meshcat.AddButton("Stop Simulation", "Escape")
 
         package_path = os.path.abspath("models/package.xml")

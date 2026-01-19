@@ -60,10 +60,19 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
             num_mid_area = 0 
             num_final_area = 0 
 
+            meta_meshcat = None 
+
             while m < len(seeds): 
                 print(self.root_cfg.controller)
                 self.root_cfg.controller.checkpoint_path =  checkpoint_path
-                task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg)
+
+                if m == 0: 
+                    task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg)
+                    meta_meshcat = task.meshcat
+                else: 
+                    task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg, 
+                                                                             meshcat_initialized=meta_meshcat)
+
                 controller = self.controller_class(root_cfg=self.root_cfg)
 
                 task.controller = controller 
@@ -109,7 +118,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
                 m+=1 
 
-                del task.meshcat
+                meta_meshcat.Delete()
                 del task 
                 del controller 
             
@@ -160,10 +169,12 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
             time.sleep(0.05)
 
+        print("HERE")
         while len(results) < total: 
             job_id, res = out_q.get()
             results[job_id] = res
 
+        print("HERE")
         max_success_job_id = -1 
         max_mild_success_job_id = -1 
         max_return_job_id = -1 

@@ -1,7 +1,7 @@
 _target_: evaluators.kuka_pusher_long_context_evaluator.KukaPlanarPusherLongContextBlockEvaluator
 
 min_seed: 2000 
-max_seed: 2100 
+max_seed: 2005
 
 checkpoint_directory: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps_0_mirror/30_obs/checkpoints"
 
