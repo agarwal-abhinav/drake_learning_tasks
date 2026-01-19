@@ -1,0 +1,6 @@
+defaults: 
+  - task: kuka_pusher_long_context 
+  - controller: ee_diffusion_planar_controller 
+  - evaluator: kuka_pusher_long_context_evaluator
+
+debug: false 

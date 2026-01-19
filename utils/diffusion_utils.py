@@ -10,6 +10,7 @@ def load_policy(policy_name: str,
                 dataset_zarr: str = None, 
                 load_normalizer_from_file: bool = False, 
                 infer_frozen_policy: bool = False): 
+    print(f"Loading policy from: {policy_name}")
     payload = torch.load(open(policy_name, "rb"), pickle_module=dill)
 
     model_cfg = payload["cfg"]
