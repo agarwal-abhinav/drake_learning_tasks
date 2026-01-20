@@ -3,6 +3,7 @@ from tasks.kuka_pusher_long_context import KukaPlanarPusherLongContextBlock
 
 from utils.file_utils import list_files_in_directory
 from utils.logging_utils import IterTee
+from utils.debug_utils import top_cuda_tensors
 
 from omegaconf import DictConfig
 from hydra.core.hydra_config import HydraConfig
@@ -11,6 +12,8 @@ import time
 import sys
 from multiprocessing import Process, Queue 
 from queue import Empty 
+
+from utils.diffusion_utils import load_policy
 
 class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator): 
     def __init__(self, root_cfg: DictConfig): 
@@ -29,13 +32,21 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
         self.num_processes = self.cfg.num_processes 
 
+        self.debug = root_cfg.get("debug", False)
+
     def run_eval(self) -> None: 
         def eval_single_checkpoint(checkpoint_path: str, 
                                    output_dir: str,
                                    seeds: list[int],
                                    process_id: int, 
                                    out_q) -> None:
-            
+            import torch, gc
+            torch.set_grad_enabled(False)
+
+            import tracemalloc
+            tracemalloc.start()
+            snap = tracemalloc.take_snapshot()
+
             os.makedirs(output_dir, exist_ok=True)
             print(f"\n\nStarting evaluation for checkpoint: {checkpoint_path}\n using process id: {process_id}\n\n")
             global_log_path = os.path.join(output_dir, "eval_log.txt")
@@ -63,10 +74,15 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
             meta_meshcat = None 
 
-            while m < len(seeds): 
-                print(self.root_cfg.controller)
-                self.root_cfg.controller.checkpoint_path =  checkpoint_path
+            # load a policy once to get around memory leaks 
+            sys.path.insert(0, self.root_cfg.controller.relative_path_to_diffusion_model)
+            policy_and_cfg = load_policy(
+                checkpoint_path, 
+                load_normalizer_from_file=self.root_cfg.controller.load_normalizer_from_file, 
+                infer_frozen_policy=self.root_cfg.controller.infer_frozen_policy
+            )
 
+            while m < len(seeds): 
                 if m == 0: 
                     task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg)
                     meta_meshcat = task.meshcat
@@ -74,7 +90,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg, 
                                                                              meshcat_initialized=meta_meshcat)
 
-                controller = self.controller_class(root_cfg=self.root_cfg)
+                controller = self.controller_class(root_cfg=self.root_cfg, 
+                                                    policy_and_cfg=policy_and_cfg)
 
                 task.controller = controller 
 
@@ -91,11 +108,12 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 print(f"\n--- Starting eval for seed {seeds[m]}---\n")
                 task.reset_robot(seeds[m])
 
-                areas, successes, correct_returns = task.diffusion_rollout(
-                    self.cfg.eval_max_time, 
-                    save_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}"), 
-                    save_html=save_html
-                )
+                with torch.inference_mode():
+                    areas, successes, correct_returns = task.diffusion_rollout(
+                        self.cfg.eval_max_time, 
+                        save_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}"), 
+                        save_html=save_html
+                    )
 
                 if areas[0] is not None: 
                     total_mid_area += areas[0]
@@ -120,8 +138,40 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 m+=1 
 
                 meta_meshcat.Delete()
+                controller.reset(None)
+                controller.close()
+                task.remove_controller()
+                task.clear_attrs(skip_private=False, close_resources=True)
                 del task 
                 del controller 
+
+                import gc, ctypes
+                gc.collect()
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+
+                def rss_mb():
+                    with open("/proc/self/statm") as f:
+                        rss_pages = int(f.read().split()[1])
+                    return rss_pages * (os.sysconf("SC_PAGE_SIZE") / 1024**2)
+
+                print("PID", os.getpid(), "RSS MB", rss_mb())
+
+                snap2 = tracemalloc.take_snapshot()
+                top = snap2.compare_to(snap, 'lineno')[:10]
+                print("Top Python growth lines: ")
+                for t in top: 
+                    print(t)
+                snap = snap2
+                
+                if self.debug: 
+                    items = top_cuda_tensors(k=15)
+
+                    if m % 3 == 0: 
+                        breakpoint()
+
+                    print(torch.cuda.memory_allocated() / 1e9, "GB allocated",
+                        torch.cuda.memory_reserved() / 1e9, "GB reserved")
+
             
             print("\n================ Evaluation Summary ================\n")
             print(f"Evaluation for: {self.root_cfg.task.initial_location_type} and seed: {seeds[0]} to {seeds[-1]}")
@@ -136,6 +186,14 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
             global_log.close()
 
             out_q.put((process_id, (total_success, total_mild_success, total_return_to_box, total_mild_return_to_box)))
+
+        # eval_single_checkpoint(
+        #     self.checkpoint_list[0],
+        #     self.checkpoint_output_dirs[0],
+        #     self.seeds,
+        #     0,
+        #     Queue()
+        # )
 
         out_q = Queue() 
         active = [] 

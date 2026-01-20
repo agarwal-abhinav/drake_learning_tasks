@@ -42,6 +42,67 @@ class BaseTask(ABC):
         self.compatible_controllers[type(value)](self)
 
         assert self.simulator is not None, "Simulator must be initialized in the task before setting the controller."
+    
+    def remove_controller(self) -> None: 
+        self._controller = None 
+
+    def clear_attrs(self, *, exclude=(), close_resources=True, skip_private=True):
+        """
+        Set instance attributes to None to help release references.
+
+        Args:
+            exclude: iterable of attribute names to keep.
+            close_resources: if True, call .close() or .shutdown() on values if present.
+            skip_private: if True, skip attributes starting with '_' (including dunder-ish).
+        """
+        exclude = set(exclude or ())
+
+        def _try_close(val):
+            try:
+                if hasattr(val, "close") and callable(val.close):
+                    val.close()
+                elif hasattr(val, "shutdown") and callable(val.shutdown):
+                    val.shutdown()
+            except Exception:
+                pass
+
+        # normal instance dict attributes
+        d = getattr(self, "__dict__", {})
+        for name, val in list(d.items()):
+            if name in exclude: 
+                continue
+            if skip_private and name.startswith("_"):
+                continue
+            if close_resources and val is not None:
+                _try_close(val)
+            try:
+                setattr(self, name, None)
+            except Exception:
+                try:
+                    delattr(self, name)
+                except Exception:
+                    pass
+
+        # handle __slots__ if present
+        slots = getattr(self.__class__, "__slots__", ())
+        if isinstance(slots, str):
+            slots = (slots,)
+        for name in slots:
+            if not name or name in exclude:
+                continue
+            if skip_private and name.startswith("_"):
+                continue
+            if hasattr(self, name):
+                try:
+                    val = getattr(self, name)
+                    if close_resources and val is not None:
+                        _try_close(val)
+                    setattr(self, name, None)
+                except Exception:
+                    try:
+                        delattr(self, name)
+                    except Exception:
+                        pass
 
     @abstractmethod
     def reset_robot(self) -> None: 

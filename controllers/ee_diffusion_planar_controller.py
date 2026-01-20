@@ -24,18 +24,24 @@ import torch
 class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
     def __init__(self,
                  root_cfg,
+                 policy_and_cfg = None
     ):
         super().__init__(root_cfg)
 
         cfg = self.cfg
-        sys.path.insert(0, cfg.relative_path_to_diffusion_model)
+        relative_path_to_diffusion_model = cfg.relative_path_to_diffusion_model
+        if relative_path_to_diffusion_model not in sys.path: 
+            sys.path.insert(0, cfg.relative_path_to_diffusion_model)
 
         load_normalizer_from_file = cfg.get("load_normalizer_from_file", True)
         infer_frozen_policy = cfg.get("infer_frozen_policy", False)
-
-        self.policy, training_cfg = load_policy(cfg.checkpoint_path, 
-                                                load_normalizer_from_file=load_normalizer_from_file, 
-                                                infer_frozen_policy=infer_frozen_policy)
+        
+        if policy_and_cfg is not None:
+            self.policy, training_cfg = policy_and_cfg
+        else:
+            self.policy, training_cfg = load_policy(cfg.checkpoint_path, 
+                                                    load_normalizer_from_file=load_normalizer_from_file, 
+                                                    infer_frozen_policy=infer_frozen_policy)
 
         self.n_action_steps = cfg.n_action_steps_override
         self.n_obs_steps = self.policy.n_obs_steps
@@ -100,7 +106,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
 
         if len(self._actions) == 0: 
             obs_dict = self._deque_to_dict()
-            with torch.no_grad(): 
+            with torch.inference_mode(): 
                 predicted_actions_base = self.policy.predict_action(
                     obs_dict, 
                     use_DDIM=self.use_DDIM
@@ -198,6 +204,16 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         self.meshcat = meshcat
 
         self.current_action = self.initial_planar_command
+
+    def close(self): 
+        if hasattr(self, "policy") and self.policy is not None: 
+            self.policy.to("cpu")
+        del self.policy 
+        del self._dict_of_obs_buffers
+        self._dict_of_obs_buffers = None 
+        self.policy = None 
+        if self._device == "cuda": 
+            torch.cuda.empty_cache()
 
     def set_post_connection_values(self, initial_planar_command, ee_body_index, translation_offset=np.array([0.0, 0.0])): 
         self._planar_body_index = ee_body_index
