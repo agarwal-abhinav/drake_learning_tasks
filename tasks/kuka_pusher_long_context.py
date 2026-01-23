@@ -1117,10 +1117,6 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
 
         X_W_iiwa0 = self.iiwa_frame.CalcPose(plant_context, self.plant.world_frame())
 
-        current_iiwa_joints = np.array(
-            self.cfg.nominal_joint_positions
-        )
-
         if self.cfg.initial_location_type == 0: 
             this_location_type = 4 
         elif self.cfg.initial_location_type == 4: 
@@ -1154,6 +1150,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             os.makedirs(os.path.join(save_path, "hydra_logs", ".hydra"))
             with open(os.path.join(save_path, "hydra_logs/.hydra/config.yaml"), 'w') as f: 
                 yaml.dump(run_config, f)
+            
+            current_iiwa_joints = np.array(
+                self.cfg.nominal_joint_positions
+            )
 
             # deal with the slider 
             for m in range(loaded_pos.shape[0]):
