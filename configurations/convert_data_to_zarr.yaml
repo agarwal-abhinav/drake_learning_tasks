@@ -1,7 +1,7 @@
 data_paths: 
-  "data/kuka_pusher_long_context_different_returns/start_bin_4_via_mirror": 50
+  "data/iros_push_data/start_bin_0_via_mirror": 50
 
-zarr_path: "data/kuka_pusher_long_context_different_returns/start_bin_4_via_mirror.zarr"
+zarr_path: "data/iros_push_data/start_bin_0_via_mirror.zarr"
 zarr_dt: 0.1 
 
 image_label_file_map: 
