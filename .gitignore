@@ -4,3 +4,5 @@ outputs/
 eval/
 
 *.pdf
+
+*.log-*
