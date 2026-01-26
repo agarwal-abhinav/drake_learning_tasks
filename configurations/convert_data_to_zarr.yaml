@@ -1,7 +1,7 @@
 data_paths: 
-  "data/iros_push_data/start_bin_0_via_mirror": 50
+  "data/iros_push_data/start_bin_0": 50
 
-zarr_path: "data/iros_push_data/start_bin_0_via_mirror.zarr"
+zarr_path: "data/iros_push_data/start_bin_0_sorted_reversed.zarr"
 zarr_dt: 0.1 
 
 image_label_file_map: 
