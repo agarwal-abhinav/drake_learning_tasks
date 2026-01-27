@@ -1128,6 +1128,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
         else:
             raise NotImplementedError("Only swapping between 0 and 4, or 1 and 3 supported for mirroring currently.")
         
+        average_error = []
         for traj_dir in tqdm(traj_dir_list): 
             loaded_pos = np.load(os.path.join(data_path, traj_dir, "slider_pos.npy"))
             loaded_quat = np.load(os.path.join(data_path, traj_dir, "slider_quat_wxyz.npy"))
@@ -1210,10 +1211,12 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 current_iiwa_joints = iiwa_joints
 
                 ee_pos = self.pusher_frame.CalcPose(plant_context, self.iiwa_frame).translation()
+                ee_pos_in_iiwa0_via_transform = ee_pos_in_world - X_W_iiwa0.translation().flatten()
                 slider_pose = self.slider_frame.CalcPose(plant_context, self.iiwa_frame)
                 trajectory["pusher_pos"].append(np.array([ee_pos]))
                 trajectory["slider_pos"].append(np.array([slider_pose.translation()]))
                 trajectory["slider_quat_wxyz"].append(np.array([slider_pose.rotation().ToQuaternion().wxyz()]))
+                average_error.append(np.linalg.norm(ee_pos_in_iiwa0_via_transform[:2] - ee_pos[:2]))
 
                 for camera_name in self.scenario.cameras.keys():
                     camera_rgb = copy.deepcopy(self.diagram.GetOutputPort(f"{camera_name}").Eval(diagram_context).data)
@@ -1225,7 +1228,9 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                 this_save_path = f'{save_path}/{key}.npy'
                 assert len(trajectory[key]) > 0, "No data collected for this trajectory key!"
                 np.save(this_save_path, np.array(trajectory[key]))
-                
+
+        print("Average end-effector position error after mirroring:", np.mean(np.array(average_error))) 
+       
     def _print_data_overlap_statistics(self): 
 
         if self.cfg.initial_location_type is not None: 

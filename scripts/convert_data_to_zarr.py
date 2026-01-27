@@ -42,7 +42,7 @@ def calculate_traj_dir_list(data_paths: Dict[str, int], sort=True) -> List[str]:
         except ValueError:
             traj_dir_list = sorted(traj_dir_list)
 
-    return traj_dir_list[::-1] 
+    return traj_dir_list
 
 @hydra.main(
     version_base=None, 
@@ -78,6 +78,17 @@ def main(cfg: DictConfig) -> None:
     episode_ends = []
     current_end = 0
     
+    print(traj_dir_list)
+    if cfg.save_clipping_indices: 
+        clipping_indices_save_path = zarr_path[:-5] + "_clipping_indices.yaml"
+        clipping_indices_dict = {'start': [], 'end': []}
+
+    use_clipping_indices = cfg.get("use_clipping_indices", None)
+    if use_clipping_indices is not None: 
+        with open(cfg.use_clipping_indices, 'r') as f: 
+            clipping_indices_loaded = yaml.safe_load(f)
+
+    traj_dir_num = 0
     for traj_dir in tqdm(traj_dir_list): 
         loaded_proprioception = []
         for prop_file in proprioception_files: 
@@ -139,11 +150,21 @@ def main(cfg: DictConfig) -> None:
             this_image_lists[image_name] = np.array(this_image_lists[image_name])
         
         if cfg.remove_start_end_idling: 
-            first_idx, last_idx = clip_start_end_idle(
-                this_proprioception, 
-                1e-9, 
-                keep_idle=1
-            )
+            if use_clipping_indices is not None:
+                first_idx = clipping_indices_loaded['start'][traj_dir_num]
+                last_idx = clipping_indices_loaded['end'][traj_dir_num]
+
+            else: 
+                first_idx, last_idx = clip_start_end_idle(
+                    this_proprioception, 
+                    1e-9, 
+                    keep_idle=1
+                )
+            
+            if cfg.save_clipping_indices: 
+                clipping_indices_dict['start'].append(int(first_idx))
+                clipping_indices_dict['end'].append(int(last_idx))
+            
             this_proprioception = this_proprioception[first_idx:last_idx]
             this_action = this_action[first_idx:last_idx]
             for image_name in image_labels: 
@@ -156,6 +177,8 @@ def main(cfg: DictConfig) -> None:
         
         episode_ends.append(current_end + len(this_proprioception))
         current_end += len(this_proprioception)
+
+        traj_dir_num += 1
 
     root = zarr.open_group(zarr_path, mode='w')
     data_group = root.create_group('data')
@@ -209,6 +232,10 @@ def main(cfg: DictConfig) -> None:
         'episode_ends', 
         data=episode_ends
     )
+
+    if cfg.save_clipping_indices: 
+        with open(clipping_indices_save_path, 'w') as f: 
+            yaml.dump(clipping_indices_dict, f)
 
 if __name__ == "__main__":
     main()
