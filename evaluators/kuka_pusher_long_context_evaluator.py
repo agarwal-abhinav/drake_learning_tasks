@@ -222,6 +222,17 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     return rss_pages * (os.sysconf("SC_PAGE_SIZE") / 1024**2)
 
                 print("PID", os.getpid(), "RSS MB", rss_mb())
+                try:
+                    aff = os.sched_getaffinity(0)
+                    aff_n = len(aff)
+                except Exception:
+                    aff_n = None
+
+                print(
+                    f"[job {job_id}] pid={os.getpid()} "
+                    f"rss={rss_mb():.1f}MB "
+                    f"cpu_affinity={aff_n}"
+                )
 
                 snap2 = tracemalloc.take_snapshot()
                 top = snap2.compare_to(snap, 'lineno')[:10]
