@@ -63,7 +63,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     intermediate_snapshot = yaml.safe_load(f)
                 
                 seeds_completed = intermediate_snapshot['seeds_completed']
-                seeds = [s for s in seeds if s not in seeds_completed]
+                seeds_to_run = [s for s in seeds if s not in seeds_completed]
 
                 global_log = open(global_log_path, "a")
                 global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
@@ -89,6 +89,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
             else: 
                 os.makedirs(output_dir, exist_ok=True)
+                seeds_to_run = seeds
             
                 global_log = open(global_log_path, "w")
                 global_log.write(f"=== Eval run started: {time.asctime()} ===\n")
@@ -132,7 +133,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
             }
 
             m = 0
-            while m < len(seeds): 
+            while m < len(seeds_to_run): 
                 if m == 0: 
                     task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg)
                     meta_meshcat = task.meshcat
@@ -145,8 +146,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
                 task.controller = controller 
 
-                os.mkdir(os.path.join(output_dir, f"eval_seed_{seeds[m]}"))
-                iter_log_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}", "eval_log.txt")
+                os.mkdir(os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}"))
+                iter_log_path = os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}", "eval_log.txt")
                 iter_log = open(iter_log_path, "w")
                 tee.set_iter_file(iter_log)
 
@@ -155,13 +156,13 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 else: 
                     save_html = False 
                 
-                print(f"\n--- Starting eval for seed {seeds[m]}---\n")
-                task.reset_robot(seeds[m])
+                print(f"\n--- Starting eval for seed {seeds_to_run[m]}---\n")
+                task.reset_robot(seeds_to_run[m])
 
                 with torch.inference_mode():
                     areas, successes, correct_returns = task.diffusion_rollout(
                         self.cfg.eval_max_time, 
-                        save_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}"), 
+                        save_path = os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}"), 
                         save_html=save_html
                     )
 
@@ -185,7 +186,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 iter_log.close()
                 tee.set_iter_file(None)
 
-                intermediate_snapshot['seeds_completed'].append(seeds[m])
+                intermediate_snapshot['seeds_completed'].append(seeds_to_run[m])
                 intermediate_snapshot['total_success'] = total_success
                 intermediate_snapshot['total_mild_success'] = total_mild_success
                 intermediate_snapshot['total_return_to_box'] = total_return_to_box
