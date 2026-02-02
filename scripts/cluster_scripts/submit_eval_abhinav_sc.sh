@@ -27,6 +27,11 @@ xvfb_pid=$!
 trap "kill $xvfb_pid" EXIT
 
 python scripts/eval_multiple_checkpoints.py \
-    hydra.run.dir=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_48/mode_4/4_obs/ \
-    evaluator.checkpoint_directory=/home/gridsan/aagarwal2/RLG/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_48/mode_4/4_obs/checkpoints/ \
+    hydra.run.dir=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/8_obs/ \
+    evaluator.checkpoint_directory=/home/gridsan/aagarwal2/RLG/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/8_obs/checkpoints/ \
     task.initial_location_type=4 evaluator.num_processes=5
+
+# python scripts/eval_multiple_checkpoints.py \
+#     hydra.run.dir=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_48/mode_4_0/8_obs/4 \
+#     evaluator.checkpoint_directory=/home/gridsan/aagarwal2/RLG/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_48/mode_4_0/8_obs/checkpoints/ \
+#     task.initial_location_type=4 evaluator.num_processes=5
