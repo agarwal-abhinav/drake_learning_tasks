@@ -10,7 +10,7 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 if __name__ == "__main__":
-    zarr_path = "data/kuka_pusher_long_context_different_returns/start_bin_0_via_mirror.zarr"
+    zarr_path = "data/iros_push_data/start_bin_0_sorted_reversed.zarr"
 
     root = zarr.open_group(zarr_path, mode='r')
     data_group = root['data']
@@ -20,6 +20,17 @@ if __name__ == "__main__":
     wrist_images = data_group["wrist_camera"]
     proprioceptions = data_group["state"]
     actions = data_group["action"]
+
+    zarr_path_2 = "data/iros_push_data/start_bin_4_via_mirror_sorted_reversed.zarr"
+
+    root_2 = zarr.open_group(zarr_path_2, mode='r')
+    data_group_2 = root_2['data']
+    meta_group_2 = root_2['meta']
+
+    overhead_images_2 = data_group_2["overhead_camera"]
+    wrist_images_2 = data_group_2["wrist_camera"]
+    proprioceptions_2 = data_group_2["state"]
+    actions_2 = data_group_2["action"]
 
     breakpoint()
 

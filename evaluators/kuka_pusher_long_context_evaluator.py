@@ -1,7 +1,7 @@
 from evaluators.base_evaluator import BaseEvaluator
 from tasks.kuka_pusher_long_context import KukaPlanarPusherLongContextBlock
 
-from utils.file_utils import list_files_in_directory
+from utils.file_utils import list_files_in_directory, return_highest_eval_seed_directory
 from utils.logging_utils import IterTee
 from utils.debug_utils import top_cuda_tensors
 
@@ -12,6 +12,9 @@ import time
 import sys
 from multiprocessing import Process, Queue 
 from queue import Empty 
+from pathlib import Path
+import yaml
+import shutil
 
 from utils.diffusion_utils import load_policy
 
@@ -47,30 +50,63 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
             tracemalloc.start()
             snap = tracemalloc.take_snapshot()
 
-            os.makedirs(output_dir, exist_ok=True)
-            print(f"\n\nStarting evaluation for checkpoint: {checkpoint_path}\n using process id: {process_id}\n\n")
+            snapshot_path = os.path.join(output_dir, "intermediate_snapshot.yaml")
             global_log_path = os.path.join(output_dir, "eval_log.txt")
-            if os.path.exists(global_log_path): 
+
+            print(f"\n\nStarting evaluation for checkpoint: {checkpoint_path}\n using process id: {process_id}\n\n")
+
+            if Path(output_dir).is_dir(): 
+                assert os.path.exists(snapshot_path), f"Output dir {output_dir} exists but no snapshot found."
+                assert os.path.exists(global_log_path), f"Output dir {output_dir} exists but no global log found."
+
+                with open(snapshot_path, "r") as f:
+                    intermediate_snapshot = yaml.safe_load(f)
+                
+                seeds_completed = intermediate_snapshot['seeds_completed']
+                seeds_to_run = [s for s in seeds if s not in seeds_completed]
+
                 global_log = open(global_log_path, "a")
                 global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
+                global_log.write(f"Resuming from seed: {seeds[0]}")
+                global_log.flush()
+
+                total_success = intermediate_snapshot['total_success']
+                total_mild_success = intermediate_snapshot['total_mild_success']
+                total_return_to_box = intermediate_snapshot['total_return_to_box']
+                total_mild_return_to_box = intermediate_snapshot['total_mild_return_to_box']
+
+                # area metrics
+                total_mid_area = intermediate_snapshot['total_mid_area']
+                total_final_area = intermediate_snapshot['total_final_area']
+                num_mid_area = intermediate_snapshot['num_mid_area']
+                num_final_area = intermediate_snapshot['num_final_area']
+
+                highest_seed_started, highest_seed_dir_started = return_highest_eval_seed_directory(output_dir)
+
+                if highest_seed_started == seeds[0]: 
+                    print(f"Removing partially completed eval_seed_{highest_seed_started} directory at {highest_seed_dir_started}")
+                    shutil.rmtree(highest_seed_dir_started)
+
             else: 
+                os.makedirs(output_dir, exist_ok=True)
+                seeds_to_run = seeds
+            
                 global_log = open(global_log_path, "w")
                 global_log.write(f"=== Eval run started: {time.asctime()} ===\n")
-            global_log.flush()
+                global_log.flush()
+
+                total_success = 0
+                total_mild_success = 0 
+                total_return_to_box = 0 
+                total_mild_return_to_box = 0 
+
+                total_mid_area = 0 
+                total_final_area = 0 
+                num_mid_area = 0 
+                num_final_area = 0 
 
             tee = IterTee(sys.stdout, global_log)
             sys.stdout = tee 
-
-            m = 0 
-            total_success = 0
-            total_mild_success = 0 
-            total_return_to_box = 0 
-            total_mild_return_to_box = 0 
-
-            total_mid_area = 0 
-            total_final_area = 0 
-            num_mid_area = 0 
-            num_final_area = 0 
 
             meta_meshcat = None 
 
@@ -82,7 +118,22 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 infer_frozen_policy=self.root_cfg.controller.infer_frozen_policy
             )
 
-            while m < len(seeds): 
+            intermediate_snapshot = {
+                'seeds_completed': [], 
+                # metrics 
+                'total_success': 0, 
+                'total_mild_success': 0, 
+                'total_return_to_box': 0, 
+                'total_mild_return_to_box': 0, 
+                # area metrics
+                'total_mid_area': 0, 
+                'total_final_area': 0, 
+                'num_mid_area': 0, 
+                'num_final_area': 0
+            }
+
+            m = 0
+            while m < len(seeds_to_run): 
                 if m == 0: 
                     task: KukaPlanarPusherLongContextBlock = self.task_class(root_cfg=self.root_cfg)
                     meta_meshcat = task.meshcat
@@ -95,8 +146,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
                 task.controller = controller 
 
-                os.mkdir(os.path.join(output_dir, f"eval_seed_{seeds[m]}"))
-                iter_log_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}", "eval_log.txt")
+                os.mkdir(os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}"))
+                iter_log_path = os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}", "eval_log.txt")
                 iter_log = open(iter_log_path, "w")
                 tee.set_iter_file(iter_log)
 
@@ -105,13 +156,13 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 else: 
                     save_html = False 
                 
-                print(f"\n--- Starting eval for seed {seeds[m]}---\n")
-                task.reset_robot(seeds[m])
+                print(f"\n--- Starting eval for seed {seeds_to_run[m]}---\n")
+                task.reset_robot(seeds_to_run[m])
 
                 with torch.inference_mode():
                     areas, successes, correct_returns = task.diffusion_rollout(
                         self.cfg.eval_max_time, 
-                        save_path = os.path.join(output_dir, f"eval_seed_{seeds[m]}"), 
+                        save_path = os.path.join(output_dir, f"eval_seed_{seeds_to_run[m]}"), 
                         save_html=save_html
                     )
 
@@ -135,6 +186,21 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 iter_log.close()
                 tee.set_iter_file(None)
 
+                intermediate_snapshot['seeds_completed'].append(seeds_to_run[m])
+                intermediate_snapshot['total_success'] = total_success
+                intermediate_snapshot['total_mild_success'] = total_mild_success
+                intermediate_snapshot['total_return_to_box'] = total_return_to_box
+                intermediate_snapshot['total_mild_return_to_box'] = total_mild_return_to_box
+
+                # area metrics 
+                intermediate_snapshot['total_mid_area'] = total_mid_area
+                intermediate_snapshot['total_final_area'] = total_final_area
+                intermediate_snapshot['num_mid_area'] = num_mid_area
+                intermediate_snapshot['num_final_area'] = num_final_area
+
+                with open(snapshot_path, "w") as f:
+                    yaml.dump(intermediate_snapshot, f)
+
                 m+=1 
 
                 meta_meshcat.Delete()
@@ -144,7 +210,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 task.clear_attrs(skip_private=False, close_resources=True)
                 del task 
                 del controller 
-
+                
+                # some system level debugging information
                 import gc, ctypes
                 gc.collect()
                 ctypes.CDLL("libc.so.6").malloc_trim(0)
@@ -155,6 +222,17 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     return rss_pages * (os.sysconf("SC_PAGE_SIZE") / 1024**2)
 
                 print("PID", os.getpid(), "RSS MB", rss_mb())
+                try:
+                    aff = os.sched_getaffinity(0)
+                    aff_n = len(aff)
+                except Exception:
+                    aff_n = None
+
+                print(
+                    f"[job {job_id}] pid={os.getpid()} "
+                    f"rss={rss_mb():.1f}MB "
+                    f"cpu_affinity={aff_n}"
+                )
 
                 snap2 = tracemalloc.take_snapshot()
                 top = snap2.compare_to(snap, 'lineno')[:10]

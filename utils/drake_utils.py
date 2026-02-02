@@ -105,11 +105,11 @@ def iiwa_ik_function(pose: RigidTransform,
         RigidTransform().rotation(),
         plant.world_frame(),
         pose.rotation(),
-        0.01
+        0.00
     )
     prog = ik.get_mutable_prog()
     q = ik.q() 
-    prog.AddQuadraticErrorCost(np.identity(len(q)), q0, q)
+    prog.AddQuadraticErrorCost(5*np.identity(len(q)), q0, q)
     prog.SetInitialGuess(q, q0) 
 
     result = Solve(ik.prog())
