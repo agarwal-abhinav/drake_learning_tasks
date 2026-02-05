@@ -1,14 +1,15 @@
 #!/bin/bash
 
-#SBATCH --job-name=de4_d_48_o_60
-#SBATCH --time=40:00:00 
+#SBATCH --job-name=de0_d_96_o_60
+#SBATCH --time=23:59:00 
 #SBATCH --cpus-per-task=30 
 #SBATCH --mem=90G 
-#SBATCH --output=submit_eval_locomotion.sh.log-%j
+#SBATCH --output=submit_eval_vision.sh.log-%j
 #SBATCH --account=locomotion 
-#SBATCH --partition=locomotion-h200 
-#SBATCH --qos=locomotion-main
+#SBATCH --partition=vision-shared-h100
+#SBATCH --qos=shared-if-available
 #SBATCH --gres=gpu:1
+#SBATCH --requeue
 
 # Initialize and Load Modules
 echo "[submit_eval_locomotion.sh] Loading modules and virtual environment"
@@ -43,16 +44,16 @@ export MOSEKLM_LICENSE_FILE=/data/locomotion/abhi_ag/Licenses/mosek.lic
 
 echo "[submit_eval_locomotion.sh] Running evaluation code..."
 
-# CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_24/mode_4/4_obs/checkpoints/
-# HYDRA_RUN_DIR=outputs/test
+# CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_24/mode_4/8_obs/checkpoints/
+# HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_24/mode_4/8_obs/
 # RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
 
-CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_48/mode_4_0/60_obs/checkpoints/
-HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_48/mode_4_0/60_obs/4
+CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_96/mode_4_0/60_obs/checkpoints/
+HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_96/mode_4_0/60_obs/0
 RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
 
 python scripts/eval_multiple_checkpoints.py \
     hydra.run.dir=$HYDRA_RUN_DIR \
     evaluator.checkpoint_directory=$CHECKPOINT_DIR \
-    task.initial_location_type=4 evaluator.num_processes=7 \
+    task.initial_location_type=0 evaluator.num_processes=7 \
 	controller.relative_path_to_diffusion_model=$RELATIVE_PATH_TO_DIFFUSION

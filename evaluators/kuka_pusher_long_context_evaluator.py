@@ -64,11 +64,13 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 
                 seeds_completed = intermediate_snapshot['seeds_completed']
                 seeds_to_run = [s for s in seeds if s not in seeds_completed]
+                seeds_to_run = sorted(seeds_to_run)
 
                 global_log = open(global_log_path, "a")
                 global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
                 global_log.write(f"Resuming from seed: {seeds[0]}")
                 global_log.flush()
+                print(seeds_to_run)
 
                 total_success = intermediate_snapshot['total_success']
                 total_mild_success = intermediate_snapshot['total_mild_success']
@@ -83,7 +85,8 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
                 highest_seed_started, highest_seed_dir_started = return_highest_eval_seed_directory(output_dir)
 
-                if highest_seed_started == seeds[0]: 
+                print(highest_seed_started)
+                if highest_seed_started == seeds_to_run[0]: 
                     print(f"Removing partially completed eval_seed_{highest_seed_started} directory at {highest_seed_dir_started}")
                     shutil.rmtree(highest_seed_dir_started)
 
