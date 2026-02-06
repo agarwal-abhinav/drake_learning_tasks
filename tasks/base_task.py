@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from omegaconf import DictConfig
 from typing import Type, Callable, Dict
 import pydot
+import os
 
 from controllers.base_controller import BaseController
 
@@ -19,6 +20,10 @@ class BaseTask(ABC):
 
         self._controller = None 
         self.simulator = None # when controller is set, simulator must be initialized
+
+        # every task is going to have at list this package 
+        basic_package_path = os.path.abspath("models/package.xml")
+        self.package_list = [basic_package_path]
 
     @property
     def controller(self) -> BaseController: 

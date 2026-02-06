@@ -68,7 +68,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
 
                 global_log = open(global_log_path, "a")
                 global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
-                global_log.write(f"Resuming from seed: {seeds[0]}")
+                global_log.write(f"Resuming from seed: {seeds_to_run[0]}")
                 global_log.flush()
                 print(seeds_to_run)
 
@@ -108,6 +108,20 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 num_mid_area = 0 
                 num_final_area = 0 
 
+                intermediate_snapshot = {
+                    'seeds_completed': [], 
+                    # metrics 
+                    'total_success': 0, 
+                    'total_mild_success': 0, 
+                    'total_return_to_box': 0, 
+                    'total_mild_return_to_box': 0, 
+                    # area metrics
+                    'total_mid_area': 0, 
+                    'total_final_area': 0, 
+                    'num_mid_area': 0, 
+                    'num_final_area': 0
+                }
+
             tee = IterTee(sys.stdout, global_log)
             sys.stdout = tee 
 
@@ -120,20 +134,6 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                 load_normalizer_from_file=self.root_cfg.controller.load_normalizer_from_file, 
                 infer_frozen_policy=self.root_cfg.controller.infer_frozen_policy
             )
-
-            intermediate_snapshot = {
-                'seeds_completed': [], 
-                # metrics 
-                'total_success': 0, 
-                'total_mild_success': 0, 
-                'total_return_to_box': 0, 
-                'total_mild_return_to_box': 0, 
-                # area metrics
-                'total_mid_area': 0, 
-                'total_final_area': 0, 
-                'num_mid_area': 0, 
-                'num_final_area': 0
-            }
 
             m = 0
             while m < len(seeds_to_run): 

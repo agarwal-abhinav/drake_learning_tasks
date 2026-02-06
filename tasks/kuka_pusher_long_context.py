@@ -166,12 +166,10 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             self.meshcat = meshcat_initialized
         # self.meshcat.AddButton("Stop Simulation", "Escape")
 
-        package_path = os.path.abspath("models/package.xml")
-        package_list = [package_path]
         self.station = MakeHardwareStation(
                 scenario=scenario, 
                 meshcat=self.meshcat, 
-                package_xmls=package_list, 
+                package_xmls=self.package_list, 
                 parser_prefinalize_callback=pre_finalize_function(self.cfg.bins),
             )
         self.station: RobotDiagram = builder.AddSystem(self.station)
@@ -186,7 +184,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
             toppra_acc_lim = np.array(self.cfg.sim_toppra_acceleration_limit)
         self.iiwa_planner: IiwaPlanner = builder.AddSystem(
             IiwaPlanner(
-                robot_plant=self._load_robot_only(package_list),
+                robot_plant=self._load_robot_only(self.package_list),
                 desired_pose = self.reset_pose,
                 frame_name="iiwa_link_7",
                 nominal_joint_positions=self.nominal_joint_positions,
