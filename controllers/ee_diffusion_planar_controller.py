@@ -21,7 +21,14 @@ from .base_controller import BaseControllerLeafSystem
 
 import torch 
 
+custom_dataset_functions = []
+
 class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
+    dataset_type_to_controller_init_map = {
+        "planar_pushing_attention_dataset_constant_then_skip_frames": lambda instance: instance._preprocess_constant_then_skip_frames(instance.training_cfg),
+        "planar_pushing_attention_dataset_skip_frames": lambda instance: instance._preprocess_skip_frames(instance.training_cfg), 
+        "planar_pushing_attention_dataset_extra_frame": lambda instance: instance._preprocess_extra_frame(instance.training_cfg)
+    }
     def __init__(self,
                  root_cfg,
                  policy_and_cfg = None
@@ -37,23 +44,28 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         infer_frozen_policy = cfg.get("infer_frozen_policy", False)
         
         if policy_and_cfg is not None:
-            self.policy, training_cfg = policy_and_cfg
+            self.policy, self.training_cfg = policy_and_cfg
         else:
-            self.policy, training_cfg = load_policy(cfg.checkpoint_path, 
+            self.policy, self.training_cfg = load_policy(cfg.checkpoint_path, 
                                                     load_normalizer_from_file=load_normalizer_from_file, 
                                                     infer_frozen_policy=infer_frozen_policy)
 
+        special_sequencing_dataset_type = self.training_cfg.task.dataset._target_.split(".")[-2]
+        if special_sequencing_dataset_type in self.dataset_type_to_controller_init_map: 
+            self.dataset_type_to_controller_init_map[special_sequencing_dataset_type](self)
+        else: 
+            self._preprocess_default(self.training_cfg)
+
         self.n_action_steps = cfg.n_action_steps_override
-        self.n_obs_steps = self.policy.n_obs_steps
         self._actions = deque([], maxlen=self.n_action_steps)
 
-        self.obs_names = list(training_cfg.shape_meta.obs.keys())
-        self.obs_shapes = training_cfg.shape_meta.obs
+        self.obs_names = list(self.training_cfg.shape_meta.obs.keys())
+        self.obs_shapes = self.training_cfg.shape_meta.obs
 
         # define dequeues for policy input 
         self._dict_of_obs_buffers = {}
         for obs_name_key in self.obs_names: 
-            self._dict_of_obs_buffers[obs_name_key] = deque([], maxlen=self.policy.n_obs_steps)
+            self._dict_of_obs_buffers[obs_name_key] = deque([], maxlen=self.n_obs_steps)
 
         # declare input ports 
         self._body_poses_in = self.DeclareAbstractInputPort(
@@ -98,7 +110,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             return 
     
         # wait time at the start 
-        while len(self._dict_of_obs_buffers[self.obs_names[0]]) < self.policy.n_obs_steps - 1: 
+        while len(self._dict_of_obs_buffers[self.obs_names[0]]) < self.n_obs_steps - 1: 
             self._update_deques(context) 
             output.set_value(self.current_action)
         
@@ -117,7 +129,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             if self.cfg.visualize_actions: 
                 self._visualize_trajectory(predicted_actions_base)
             
-            self._actions.extend(predicted_actions[self.n_obs_steps-1:self.n_obs_steps-1 + self.n_action_steps])
+            self._actions.extend(predicted_actions[self.policy.n_obs_steps-1:self.policy.n_obs_steps-1 + self.n_action_steps])
 
         self.current_action = self._actions.popleft()
         output.set_value(self.current_action) 
@@ -175,8 +187,8 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             if "camera" in name: 
                 this_processed_buffer = torch.cat(
                     [
-                        torch.from_numpy(np.moveaxis(img, -1, -3) / 255.0)
-                        for img in self._dict_of_obs_buffers[name]
+                        torch.from_numpy(np.moveaxis(self._dict_of_obs_buffers[name][k], -1, -3) / 255.0)
+                        for k in self.indices_to_keep
                     ], 
                     dim=0
                 ).reshape(
@@ -191,7 +203,9 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
 
             else: 
                 data['obs'][name] = torch.from_numpy(np.stack(
-                    self._dict_of_obs_buffers[name]
+                    [
+                        self._dict_of_obs_buffers[name][k] for k in self.indices_to_keep
+                    ]
                 )).unsqueeze(0).to(self._device).repeat(self.cfg.num_samples, 1, 1)
         
         return data 
@@ -222,5 +236,56 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
 
     def update(self):
         print("Update method called - no operation defined.")
+
+    # pre and post processing functions for skip connection long context policies         
+
+    def _preprocess_extra_frame(self, policy_cfg): 
+        print("Running preprocessing for extra frame policy...")
+        self.n_obs_steps = policy_cfg.task.dataset.n_obs_steps 
+        
+        continuous_till = policy_cfg.task.dataset.continuous_till
+
+        self.indices_to_keep = np.concatenate([np.array([0]), np.arange(self.n_obs_steps - continuous_till, self.n_obs_steps)])
+
+        assert len(self.indices_to_keep) == self.policy.n_obs_steps, "Number of indices to keep must match the policy's n_obs_steps."
+
+    def _preprocess_constant_then_skip_frames(self, policy_cfg): 
+        print("Running preprocessing for constant then skip frames policy...")
+        self.n_obs_steps = policy_cfg.task.dataset.n_obs_steps
+
+        H = self.n_obs_steps 
+        K = policy_cfg.task.dataset.skip_every 
+        R = policy_cfg.task.dataset.constant_upto 
+
+        if H - R - 2 >= 0: 
+            older = np.arange(H-R-2, -1, -K)[::-1]
+        else: 
+            older = np.empty(0, dtype=int)
+        
+        recent = np.arange(H-R, H)
+
+        self.indices_to_keep = np.concatenate([older, recent])
+
+        assert len(self.indices_to_keep) == self.policy.n_obs_steps, "Number of indices to keep must match the policy's n_obs_steps."
+
+    def _preprocess_skip_frames(self, policy_cfg): 
+        print("Running preprocessing for skip frames policy...")
+        self.n_obs_steps = policy_cfg.task.dataset.n_obs_steps
+
+        H = self.n_obs_steps 
+        K = policy_cfg.task.dataset.skip_every 
+
+        self.indices_to_keep = np.arange(H-1, -1, -K)[::-1]
+
+        assert len(self.indices_to_keep) == self.policy.n_obs_steps, "Number of indices to keep must match the policy's n_obs_steps."
+    
+    def _preprocess_default(self, policy_cfg): 
+        print("No special preprocessing for policy - using default last n_obs_steps frames as input.")
+        self.n_obs_steps = policy_cfg.n_obs_steps 
+
+        self.indices_to_keep = np.arange(self.n_obs_steps)
+
+
+
 
     
