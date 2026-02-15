@@ -240,6 +240,15 @@ def print_best_combined(
             print(f"{other} at this checkpoint (combined): {format_float(other_total)}")
             print(f"  breakdown: 0={format_float(s0.get(other))}  4={format_float(s4.get(other))}")
 
+        print(f"checkpoint: latest")
+        print(f"{metric} (combined): {format_float(combined['latest'][metric])}")
+        print(f"  breakdown: 0={format_float(stats0['latest'].get(metric))}  4={format_float(stats4['latest'].get(metric))}")
+
+        # Also report paired metrics for this best checkpoint
+        for other in PAIRED_METRICS.get(metric, []):
+            other_total = stats0['latest'].get(other) + stats4['latest'].get(other)
+            print(f"{other} at this checkpoint (combined): {format_float(other_total)}")
+            print(f"  breakdown: 0={format_float(stats0['latest'].get(other))}  4={format_float(stats4['latest'].get(other))}")
 
         avg_mid, avg_final = combined_avg_areas(s0, s4)
         print(f"avg_mid_area (combined): {format_float(avg_mid)}")
