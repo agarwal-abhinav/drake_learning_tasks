@@ -63,6 +63,13 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     intermediate_snapshot = yaml.safe_load(f)
                 
                 seeds_completed = intermediate_snapshot['seeds_completed']
+                if len(seeds_completed) == len(seeds): 
+                    print(f"All seeds already completed for checkpoint {checkpoint_path}. Skipping evaluation.")
+                    out_q.put((process_id, (intermediate_snapshot['total_success'], 
+                                            intermediate_snapshot['total_mild_success'], 
+                                            intermediate_snapshot['total_return_to_box'], 
+                                            intermediate_snapshot['total_mild_return_to_box'])))
+                    return
                 seeds_to_run = [s for s in seeds if s not in seeds_completed]
                 seeds_to_run = sorted(seeds_to_run)
 
