@@ -262,7 +262,7 @@ class IiwaPlanner(LeafSystem):
         workspace = gcs.AddRegions(
             [
                 HPolyhedron.MakeBox(
-                    plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits()
+                    plant.GetPositionLowerLimits()-1e-4, plant.GetPositionUpperLimits() + 1e-4
                 )
             ],
             5,
