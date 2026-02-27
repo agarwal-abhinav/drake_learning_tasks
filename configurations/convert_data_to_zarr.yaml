@@ -1,7 +1,7 @@
 data_paths: 
-  "data/iros_push_data/start_bin_0_via_mirror": 50
+  "data/iros_push_data/start_bin_1_via_mirror": 50
 
-zarr_path: "data/iros_push_data/start_bin_0_via_mirror_sorted.zarr"
+zarr_path: "data/iros_push_data/start_bin_1_via_mirror_sorted_reversed.zarr"
 zarr_dt: 0.1 
 
 image_label_file_map: 
@@ -18,4 +18,4 @@ zarr_image_height: 128
 
 remove_start_end_idling: true 
 save_clipping_indices: true
-use_clipping_indices: "data/iros_push_data/start_bin_4_sorted_clipping_indices.yaml"
+use_clipping_indices: "data/iros_push_data/start_bin_3_sorted_reversed_clipping_indices.yaml"

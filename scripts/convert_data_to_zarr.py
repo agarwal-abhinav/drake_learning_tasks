@@ -42,7 +42,7 @@ def calculate_traj_dir_list(data_paths: Dict[str, int], sort=True) -> List[str]:
         except ValueError:
             traj_dir_list = sorted(traj_dir_list)
 
-    return traj_dir_list
+    return traj_dir_list[::-1]
 
 @hydra.main(
     version_base=None, 

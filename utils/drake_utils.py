@@ -92,7 +92,7 @@ def iiwa_ik_function(pose: RigidTransform,
                      plant: MultibodyPlant, 
                      plant_context: Context, 
                      q0): 
-    ik = InverseKinematics(plant, plant_context)
+    ik = InverseKinematics(plant, plant_context, with_joint_limits=False)
     ik.AddPositionConstraint(
         plant.GetFrameByName("iiwa_link_7"),
         [0, 0, 0], 
