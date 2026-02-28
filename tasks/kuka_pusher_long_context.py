@@ -751,7 +751,7 @@ class KukaPlanarPusherLongContextBlock(BaseTask):
                             overlap_volume = goal_intersect.CalcVolumeViaSampling(RandomGenerator(0), 0.01, 10000)
                             if (overlap_volume.volume / slider_base_volume) >= self.cfg.mild_overlap_volume_threshold: 
                                 mild_return_to_a_box = True 
-                                print("Mildly returned slider to a box.")
+                                print(f"Mildly returned slider to a box: {bin_name}")
                                 index_of_mild_return = step
                                 if bin_name == self.cfg.initial_location_type: 
                                     mild_success = True 
