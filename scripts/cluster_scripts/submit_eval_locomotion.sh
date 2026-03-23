@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=se4_d_72_o_48
+#SBATCH --job-name=fe0_d_192_o_48
 #SBATCH --time=40:00:00 
 #SBATCH --cpus-per-task=30 
 #SBATCH --mem=90G 
@@ -43,13 +43,17 @@ export MOSEKLM_LICENSE_FILE=/data/locomotion/abhi_ag/Licenses/mosek.lic
 
 echo "[submit_eval_locomotion.sh] Running evaluation code..."
 
-CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/80_obs/checkpoints/
-HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/80_obs/
-RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
-
-# CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_72/mode_4_0/48_obs/checkpoints/
-# HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/two_modes/data_72/mode_4_0/48_obs/0
+# CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/80_obs/checkpoints/
+# HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/single_mode/data_72/mode_4/80_obs/
 # RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
+
+# CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/dit_cross_attention/two_modes/data_24/mode_4_0/80_obs/checkpoints/
+# HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/dit_cross_attention/two_modes/data_24/mode_4_0/80_obs/0
+# RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
+
+CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/four_modes/data_192/mode_4_0/48_obs/checkpoints/
+HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/four_modes/data_192/mode_4_0/48_obs/0
+RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
 
 # CHECKPOINT_DIR=/data/locomotion/abhi_ag/workspace/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/skip_frame_study/unet_cross_attention/two_modes/data_48/constant_then_skip_second_frame_mode_4_0/40_obs/checkpoints/
 # HYDRA_RUN_DIR=eval/iros/long_context_planar_pushing/skip_frame_study/unet_cross_attention/two_modes/data_48/constant_then_skip_second_frame_mode_4_0/40_obs/0
@@ -58,5 +62,6 @@ RELATIVE_PATH_TO_DIFFUSION=../gcs-diffusion/
 python scripts/eval_multiple_checkpoints.py \
     hydra.run.dir=$HYDRA_RUN_DIR \
     evaluator.checkpoint_directory=$CHECKPOINT_DIR \
-    task.initial_location_type=4 evaluator.num_processes=7 \
-	controller.relative_path_to_diffusion_model=$RELATIVE_PATH_TO_DIFFUSION
+    task.initial_location_type=0 evaluator.num_processes=7 \
+	controller.relative_path_to_diffusion_model=$RELATIVE_PATH_TO_DIFFUSION \
+    controller.modes_to_eval="[0, 1, 3, 4]" controller.eval_max_time=70.0

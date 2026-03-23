@@ -100,6 +100,13 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
 
         self.use_DDIM = cfg.get("use_DDIM", False)
 
+        self.horizon=self.policy.horizon
+        _n_past = getattr(self.policy, "n_past_action_steps", None)
+        if _n_past is not None: 
+            self.past_predicted = _n_past - 1
+        else: 
+            self.past_predicted = self.policy.n_obs_steps - 1
+
     def DoCalcOutput(self, context: Context, output): 
         time = context.get_time()
 
@@ -129,7 +136,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             if self.cfg.visualize_actions: 
                 self._visualize_trajectory(predicted_actions_base)
             
-            self._actions.extend(predicted_actions[self.policy.n_obs_steps-1:self.policy.n_obs_steps-1 + self.n_action_steps])
+            self._actions.extend(predicted_actions[self.past_predicted:self.past_predicted + self.n_action_steps])
 
         self.current_action = self._actions.popleft()
         output.set_value(self.current_action) 
@@ -144,7 +151,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         for j, traj in enumerate(trajectory):
             for i, action in enumerate(traj):
                 # Green for executed actions (first n_action_steps), yellow for others
-                if i < self.n_obs_steps -1 + self.n_action_steps and i >= self.n_obs_steps-1:
+                if i < self.past_predicted + self.n_action_steps and i >= self.past_predicted:
                     color = Rgba(0.0, 1.0, 0.0, 0.8)  # Green
                 else:
                     color = Rgba(1.0, 1.0, 0.0, 0.8)  # Yellow
