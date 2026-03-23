@@ -10,7 +10,11 @@ _target_: controllers.ee_diffusion_planar_controller.PlanarDiffusionPolicyDrakeC
 # checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/two_modes/unet_cross_attention/constant_obs_steps/5_obs/checkpoints/epoch=0126-val_loss=0.0236-val_ddim_mse=0.0004.ckpt"
 
 # single mode 
-checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/single_mode/unet_cross_attention/4_original/constant_obs_steps_25_data/72_obs/checkpoints/latest.ckpt"
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/long_context_planar_pushing/single_mode/unet_cross_attention/4_original/constant_obs_steps_25_data/72_obs/checkpoints/latest.ckpt"
+
+# 4 modes 
+# checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/four_modes/data_96/mode_4_0/80_obs/checkpoints/epoch=0237-val_loss=0.0085-val_ddim_mse=0.0000.ckpt"
+checkpoint_path: "/home/abhinav/RLG/gcs-diffusion/data/outputs/iros/long_context_planar_pushing/data_experiments/unet_cross_attention/four_modes/data_192/mode_4_0/100_obs/checkpoints/latest.ckpt"
 
 relative_path_to_diffusion_model: "../../RLG/gcs-diffusion"
 

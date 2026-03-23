@@ -139,6 +139,17 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             self._actions.extend(predicted_actions[self.past_predicted:self.past_predicted + self.n_action_steps])
 
         self.current_action = self._actions.popleft()
+        # if time > 20: 
+        #     from PIL import Image 
+        #     for ll, image in enumerate(self._dict_of_obs_buffers['overhead_camera']): 
+        #         img = Image.fromarray(image.astype(np.uint8))
+        #         img.save(f"temp_images/over_image_{ll+10}.png")
+            
+        #     for ll, image in enumerate(self._dict_of_obs_buffers['wrist_camera']): 
+        #         img = Image.fromarray(image.astype(np.uint8))
+        #         img.save(f"temp_images/wrist_image_{ll+10}.png")
+
+        #     breakpoint()
         output.set_value(self.current_action) 
 
     def _visualize_trajectory(self, trajectory: np.ndarray):
@@ -162,6 +173,33 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                 self.meshcat.SetTransform(sphere_path, RigidTransform([action[0]+self.translation_offset[0], 
                                                                     action[1]+self.translation_offset[1], 
                                                                     0.0]))
+        if self.debug: 
+            self.meshcat.Delete("agent_pos")
+            for j, traj in enumerate(self._dict_of_obs_buffers['agent_pos']): 
+                
+                color = Rgba(0.0, 0.0, 1.0, 0.8)  # Blue for agent positions in buffer
+                sphere_path = f"agent_pos/point_{j}"
+                self.meshcat.SetObject(sphere_path, Sphere(0.005), color)
+                self.meshcat.SetTransform(sphere_path, RigidTransform([traj[0]+self.translation_offset[0], 
+                                                                    traj[1]+self.translation_offset[1], 
+                                                                    0.0]))
+                if j in self.indices_to_keep: 
+                    color = Rgba(1.0, 0.0, 0.0, 0.8)  # Red for kept agent positions
+                    sphere_path = f"agent_pos/point_{j}_extra"
+                    self.meshcat.SetObject(sphere_path, Sphere(0.005), color)
+                    self.meshcat.SetTransform(sphere_path, RigidTransform([traj[0]+self.translation_offset[0], 
+                                                                        traj[1]+self.translation_offset[1], 
+                                                                        0.0]))
+                    
+            import matplotlib.pyplot as plt 
+            plt.figure()
+            for j, traj in enumerate(self._dict_of_obs_buffers['agent_pos']):
+                if j in self.indices_to_keep: 
+                    plt.scatter(float(traj[0]), float(traj[1]), 'ro')  # red for kept positions
+                else: 
+                    plt.scatter(float(traj[0]), float(traj[1]), 'bo')  # blue for other positions
+            plt.title("Agent positions in buffer (red=kept, blue=discarded)")
+            plt.show()
 
     def _update_deques(self, context: Context): 
         camera_images = {}
