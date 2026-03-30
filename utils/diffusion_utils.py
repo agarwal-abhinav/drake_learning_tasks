@@ -22,7 +22,7 @@ def load_policy(policy_name: str,
 
     model_workspace_cls = hydra.utils.get_class(model_cfg._target_)
     model_workspace = model_workspace_cls(model_cfg)
-    model_workspace.load_payload(payload, exclude_keys=None, include_keys=None)
+    model_workspace.load_payload(payload, exclude_keys=['checkpoint_managers', 'optimizer', 'scalar'], include_keys=None)
 
     if load_normalizer_from_file: 
         normalizer_path = os.path.join(os.path.dirname(os.path.dirname(policy_name)), "normalizer.pt")

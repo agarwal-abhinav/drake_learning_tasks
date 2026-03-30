@@ -244,14 +244,14 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                     self.obs_shapes[name].shape[2]
                 ).to(self._device)
 
-                data['obs'][name] = this_processed_buffer.repeat(self.cfg.num_samples, 1, 1, 1, 1)
+                data['obs'][name] = this_processed_buffer.repeat(self.cfg.num_samples, 1, 1, 1, 1).float()
 
             else: 
                 data['obs'][name] = torch.from_numpy(np.stack(
                     [
                         self._dict_of_obs_buffers[name][k] for k in self.indices_to_keep
                     ]
-                )).unsqueeze(0).to(self._device).repeat(self.cfg.num_samples, 1, 1)
+                )).unsqueeze(0).to(self._device).repeat(self.cfg.num_samples, 1, 1).float()
         
         return data 
     
