@@ -27,6 +27,7 @@ relative_path_to_diffusion_model: "../diffusion-policy-experiment"
 load_normalizer_from_file: true 
 infer_frozen_policy: true 
 use_DDIM: true 
+use_ptp_realign: false
 
 policy_device: "cuda"
 

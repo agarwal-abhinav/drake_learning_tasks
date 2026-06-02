@@ -42,6 +42,7 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
 
         load_normalizer_from_file = cfg.get("load_normalizer_from_file", True)
         infer_frozen_policy = cfg.get("infer_frozen_policy", False)
+        self.use_ptp_realign = cfg.get("use_ptp_realign", False)
         
         if policy_and_cfg is not None:
             self.policy, self.training_cfg = policy_and_cfg
@@ -106,6 +107,9 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             self.past_predicted = _n_past - 1
         else: 
             self.past_predicted = self.policy.n_obs_steps - 1
+        
+        if self.use_ptp_realign: 
+            self._executed_actions = deque([], maxlen=self.past_predicted)
 
     def DoCalcOutput(self, context: Context, output): 
         time = context.get_time()
@@ -130,8 +134,17 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
                     obs_dict, 
                     use_DDIM=self.use_DDIM
                 )['action_pred'].cpu().numpy()
+
+            if (self.use_ptp_realign and self.cfg.num_samples > 1 and len(self._executed_actions) == self.past_predicted): 
+                # print("using ptp")
+                past_cmds = np.stack(list(self._executed_actions), axis=0)
+                pred_past = predicted_actions_base[:, :self.past_predicted, :]
+                dists = ((pred_past - past_cmds[None]) ** 2).sum(axis=(1,2))
+                best_idx = int(np.argmin(dists))
+            else: 
+                best_idx = 0
             
-            predicted_actions = predicted_actions_base[0]
+            predicted_actions = predicted_actions_base[best_idx]
 
             if self.cfg.visualize_actions: 
                 self._visualize_trajectory(predicted_actions_base)
@@ -139,6 +152,8 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
             self._actions.extend(predicted_actions[self.past_predicted:self.past_predicted + self.n_action_steps])
 
         self.current_action = self._actions.popleft()
+        if self.use_ptp_realign: 
+            self._executed_actions.append(np.asarray(self.current_action, dtype=np.float32).copy())
         # if time > 20: 
         #     from PIL import Image 
         #     for ll, image in enumerate(self._dict_of_obs_buffers['overhead_camera']): 
@@ -263,6 +278,9 @@ class PlanarDiffusionPolicyDrakeController(BaseControllerLeafSystem):
         self.meshcat = meshcat
 
         self.current_action = self.initial_planar_command
+
+        if self.use_ptp_realign: 
+            self._executed_actions.clear()
 
     def close(self): 
         if hasattr(self, "policy") and self.policy is not None: 

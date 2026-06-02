@@ -56,46 +56,81 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
             print(f"\n\nStarting evaluation for checkpoint: {checkpoint_path}\n using process id: {process_id}\n\n")
 
             if Path(output_dir).is_dir(): 
-                assert os.path.exists(snapshot_path), f"Output dir {output_dir} exists but no snapshot found."
+                # assert os.path.exists(snapshot_path), f"Output dir {output_dir} exists but no snapshot found."
                 assert os.path.exists(global_log_path), f"Output dir {output_dir} exists but no global log found."
 
-                with open(snapshot_path, "r") as f:
-                    intermediate_snapshot = yaml.safe_load(f)
+                if os.path.exists(snapshot_path): 
+                    with open(snapshot_path, "r") as f:
+                        intermediate_snapshot = yaml.safe_load(f)
+                    
+                    seeds_completed = intermediate_snapshot['seeds_completed']
+                    if len(seeds_completed) == len(seeds): 
+                        print(f"All seeds already completed for checkpoint {checkpoint_path}. Skipping evaluation.")
+                        out_q.put((process_id, (intermediate_snapshot['total_success'], 
+                                                intermediate_snapshot['total_mild_success'], 
+                                                intermediate_snapshot['total_return_to_box'], 
+                                                intermediate_snapshot['total_mild_return_to_box'])))
+                        return
+                    seeds_to_run = [s for s in seeds if s not in seeds_completed]
+                    seeds_to_run = sorted(seeds_to_run)
+
+                    global_log = open(global_log_path, "a")
+                    global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
+                    global_log.write(f"Resuming from seed: {seeds_to_run[0]}")
+                    global_log.flush()
+                    print(seeds_to_run)
+
+                    total_success = intermediate_snapshot['total_success']
+                    total_mild_success = intermediate_snapshot['total_mild_success']
+                    total_return_to_box = intermediate_snapshot['total_return_to_box']
+                    total_mild_return_to_box = intermediate_snapshot['total_mild_return_to_box']
+
+                    # area metrics
+                    total_mid_area = intermediate_snapshot['total_mid_area']
+                    total_final_area = intermediate_snapshot['total_final_area']
+                    num_mid_area = intermediate_snapshot['num_mid_area']
+                    num_final_area = intermediate_snapshot['num_final_area']
+
+                    highest_seed_started, highest_seed_dir_started = return_highest_eval_seed_directory(output_dir)
+
+                    print(highest_seed_started)
+                    if highest_seed_started == seeds_to_run[0]: 
+                        print(f"Removing partially completed eval_seed_{highest_seed_started} directory at {highest_seed_dir_started}")
+                        shutil.rmtree(highest_seed_dir_started)
+                else: 
+                    print("Removing partially completed output directory, job was terminated before snapshot could be saved. ")
+                    shutil.rmtree(output_dir)
+
+                    os.makedirs(output_dir, exist_ok=True)
+                    seeds_to_run = seeds
                 
-                seeds_completed = intermediate_snapshot['seeds_completed']
-                if len(seeds_completed) == len(seeds): 
-                    print(f"All seeds already completed for checkpoint {checkpoint_path}. Skipping evaluation.")
-                    out_q.put((process_id, (intermediate_snapshot['total_success'], 
-                                            intermediate_snapshot['total_mild_success'], 
-                                            intermediate_snapshot['total_return_to_box'], 
-                                            intermediate_snapshot['total_mild_return_to_box'])))
-                    return
-                seeds_to_run = [s for s in seeds if s not in seeds_completed]
-                seeds_to_run = sorted(seeds_to_run)
+                    global_log = open(global_log_path, "w")
+                    global_log.write(f"=== Eval run started: {time.asctime()} ===\n")
+                    global_log.flush()
 
-                global_log = open(global_log_path, "a")
-                global_log.write(f"\n\n=== Appending new eval run started: {time.asctime()} ===\n")
-                global_log.write(f"Resuming from seed: {seeds_to_run[0]}")
-                global_log.flush()
-                print(seeds_to_run)
+                    total_success = 0
+                    total_mild_success = 0 
+                    total_return_to_box = 0 
+                    total_mild_return_to_box = 0 
 
-                total_success = intermediate_snapshot['total_success']
-                total_mild_success = intermediate_snapshot['total_mild_success']
-                total_return_to_box = intermediate_snapshot['total_return_to_box']
-                total_mild_return_to_box = intermediate_snapshot['total_mild_return_to_box']
+                    total_mid_area = 0 
+                    total_final_area = 0 
+                    num_mid_area = 0 
+                    num_final_area = 0 
 
-                # area metrics
-                total_mid_area = intermediate_snapshot['total_mid_area']
-                total_final_area = intermediate_snapshot['total_final_area']
-                num_mid_area = intermediate_snapshot['num_mid_area']
-                num_final_area = intermediate_snapshot['num_final_area']
-
-                highest_seed_started, highest_seed_dir_started = return_highest_eval_seed_directory(output_dir)
-
-                print(highest_seed_started)
-                if highest_seed_started == seeds_to_run[0]: 
-                    print(f"Removing partially completed eval_seed_{highest_seed_started} directory at {highest_seed_dir_started}")
-                    shutil.rmtree(highest_seed_dir_started)
+                    intermediate_snapshot = {
+                        'seeds_completed': [], 
+                        # metrics 
+                        'total_success': 0, 
+                        'total_mild_success': 0, 
+                        'total_return_to_box': 0, 
+                        'total_mild_return_to_box': 0, 
+                        # area metrics
+                        'total_mid_area': 0, 
+                        'total_final_area': 0, 
+                        'num_mid_area': 0, 
+                        'num_final_area': 0
+                    }
 
             else: 
                 os.makedirs(output_dir, exist_ok=True)
@@ -128,7 +163,7 @@ class KukaPlanarPusherLongContextBlockEvaluator(BaseEvaluator):
                     'num_mid_area': 0, 
                     'num_final_area': 0
                 }
-
+                
             tee = IterTee(sys.stdout, global_log)
             sys.stdout = tee 
 

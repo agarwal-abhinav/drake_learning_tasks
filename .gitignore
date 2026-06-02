@@ -2,9 +2,13 @@ __pycache__/
 data/
 outputs/
 eval/
+eval_2/
+eval_4/
 
 *.pdf
 
 *.log-*
 
 .vscode/
+
+output_logs_old/
